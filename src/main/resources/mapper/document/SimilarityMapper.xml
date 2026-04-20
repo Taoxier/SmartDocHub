@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.taoxier.smartdochub.document.mapper.SimilarityMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.taoxier.smartdochub.document.model.entity.Similarity">
+        <id column="id" property="id" />
+        <result column="source_doc_id" property="sourceDocId" />
+        <result column="target_doc_id" property="targetDocId" />
+        <result column="similarity_type" property="similarityType" />
+        <result column="similarity_score" property="similarityScore" />
+        <result column="matched_chunks" property="matchedChunks" />
+        <result column="algorithm_used" property="algorithmUsed" />
+        <result column="create_time" property="createTime" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, source_doc_id, target_doc_id, similarity_type, similarity_score, matched_chunks, algorithm_used, create_time
+    </sql>
+
+</mapper>

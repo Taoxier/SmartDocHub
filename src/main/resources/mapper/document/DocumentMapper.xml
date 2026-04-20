@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.taoxier.smartdochub.document.mapper.DocumentMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.taoxier.smartdochub.document.model.entity.Document">
+        <id column="id" property="id" />
+        <result column="title" property="title" />
+        <result column="description" property="description" />
+        <result column="original_filename" property="originalFilename" />
+        <result column="storage_path" property="storagePath" />
+        <result column="file_size" property="fileSize" />
+        <result column="file_type" property="fileType" />
+        <result column="file_hash" property="fileHash" />
+        <result column="upload_user_id" property="uploadUserId" />
+        <result column="process_status" property="processStatus" />
+        <result column="process_progress" property="processProgress" />
+        <result column="process_message" property="processMessage" />
+        <result column="page_count" property="pageCount" />
+        <result column="word_count" property="wordCount" />
+        <result column="character_count" property="characterCount" />
+        <result column="parsed_content" property="parsedContent" />
+        <result column="overall_similarity" property="overallSimilarity" />
+        <result column="text_similarity" property="textSimilarity" />
+        <result column="table_similarity" property="tableSimilarity" />
+        <result column="formula_similarity" property="formulaSimilarity" />
+        <result column="ai_probability" property="aiProbability" />
+        <result column="detected_ai_model" property="detectedAiModel" />
+        <result column="quality_score" property="qualityScore" />
+        <result column="readability_score" property="readabilityScore" />
+        <result column="is_duplicate" property="isDuplicate" />
+        <result column="is_ai_generated" property="isAiGenerated" />
+        <result column="is_public" property="isPublic" />
+        <result column="needs_review" property="needsReview" />
+        <result column="view_count" property="viewCount" />
+        <result column="download_count" property="downloadCount" />
+        <result column="favorite_count" property="favoriteCount" />
+        <result column="create_time" property="createTime" />
+        <result column="update_time" property="updateTime" />
+        <result column="is_deleted" property="isDeleted" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, title, description, original_filename, storage_path, file_size, file_type, file_hash, upload_user_id, process_status, process_progress, process_message, page_count, word_count, character_count, parsed_content, overall_similarity, text_similarity, table_similarity, formula_similarity, ai_probability, detected_ai_model, quality_score, readability_score, is_duplicate, is_ai_generated, is_public, needs_review, view_count, download_count, favorite_count, create_time, update_time, is_deleted
+    </sql>
+
+</mapper>
