@@ -64,6 +64,16 @@ public class KgServiceImpl implements KgService {
                                 .eq(KgNode::getNodeName, node.getNodeName()));
                 if (existingNode == null) {
                     kgNodeMapper.insert(node);
+                    // 插入后，如果ID为null，重新查询以获取ID
+                    if (node.getId() == null) {
+                        existingNode = kgNodeMapper.selectOne(
+                                new LambdaQueryWrapper<KgNode>()
+                                        .eq(KgNode::getNodeType, node.getNodeType())
+                                        .eq(KgNode::getNodeName, node.getNodeName()));
+                        if (existingNode != null) {
+                            node.setId(existingNode.getId());
+                        }
+                    }
                 } else {
                     node.setId(existingNode.getId());
                 }
@@ -74,6 +84,11 @@ public class KgServiceImpl implements KgService {
 
             // 6. 保存关系
             for (KgRelation relation : relations) {
+                // 检查节点ID是否为null
+                if (relation.getSourceNodeId() == null || relation.getTargetNodeId() == null) {
+                    log.warn("关系节点ID为null，跳过保存，文档ID: {}", documentId);
+                    continue;
+                }
                 // 检查关系是否已存在
                 KgRelation existingRelation = kgRelationMapper.selectOne(
                         new LambdaQueryWrapper<KgRelation>()
@@ -85,8 +100,12 @@ public class KgServiceImpl implements KgService {
                 }
             }
 
-            // 6. 建立文档与节点的映射
+            // 7. 建立文档与节点的映射
             for (KgNode node : nodes) {
+                if (node.getId() == null) {
+                    log.warn("节点ID为null，跳过映射，文档ID: {}, 节点: {}", documentId, node.getNodeName());
+                    continue;
+                }
                 KgMapping mapping = new KgMapping();
                 mapping.setDocumentId(documentId);
                 mapping.setNodeId(node.getId());

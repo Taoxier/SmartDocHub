@@ -93,7 +93,7 @@
               topic.topicValue
             }}</el-tag>
             <el-tag v-if="doc.topics.length > 3" size="small" class="doc-topic-tag">+{{ doc.topics.length - 3
-              }}</el-tag>
+            }}</el-tag>
           </div>
         </div>
 
@@ -102,13 +102,13 @@
             <div class="stat-item" v-if="doc.overallSimilarity !== undefined">
               <span class="stat-label">相似度</span>
               <span class="stat-value" :class="getSimilarityClass(doc.overallSimilarity)">{{ (doc.overallSimilarity *
-                100).toFixed(1) }}%</span>
+                100).toFixed(2) }}%</span>
             </div>
             <div class="stat-item" v-if="doc.aiProbability !== undefined">
               <span class="stat-label">AI率</span>
               <span class="stat-value" :class="getAIProbabilityClass(doc.aiProbability)">{{ (doc.aiProbability *
-                100).toFixed(1)
-                }}%</span>
+                100).toFixed(2)
+              }}%</span>
             </div>
           </div>
           <div class="stats-right">
@@ -127,7 +127,8 @@
     </div>
 
     <div class="pagination-wrapper" v-if="total > 0">
-      <el-pagination v-model:current-page="searchParams.pageNum" v-model:page-size="searchParams.pageSize"
+      <el-pagination :current-page="searchParams.pageNum" :page-size="searchParams.pageSize"
+        @update:current-page="val => searchParams.pageNum = val" @update:page-size="val => searchParams.pageSize = val"
         :page-sizes="[20, 50, 100]" :total="total"
         :layout="isMyUploadsOrFavorites ? 'total, sizes, prev, pager, next, jumper' : 'sizes, prev, pager, next, jumper'"
         @size-change="loadDocuments" @current-change="loadDocuments" />
@@ -149,6 +150,11 @@
           </div>
         </template>
       </el-upload>
+
+      <!-- 上传进度条 -->
+      <div v-if="uploadProgress > 0 && uploadProgress < 100" style="margin-top: 16px;">
+        <el-progress :percentage="uploadProgress" />
+      </div>
 
       <template #footer>
         <el-button @click="showUploadDialog = false">取消</el-button>
@@ -188,7 +194,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { ref, reactive, onMounted, watch, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -197,7 +203,7 @@ import {
 import {
   getDocumentList, uploadDocument, uploadMultipleDocuments, downloadDocument, rateDocument,
   formatFileSize, getFileIcon, getMyUploadedDocuments, getMyFavoriteDocuments, getMyHistoryDocuments,
-  batchRemoveFavorite, batchRemoveHistory, clearHistory, unfavoriteDocument
+  batchRemoveFavorite, batchRemoveHistory, clearHistory, unfavoriteDocument, deleteDocument
 } from '@/api/document'
 
 const route = useRoute()
@@ -216,6 +222,7 @@ const props = defineProps({
 
 const loading = ref(false)
 const uploading = ref(false)
+const uploadProgress = ref(0)
 const documentList = ref([])
 const total = ref(0)
 const showUploadDialog = ref(false)
@@ -461,9 +468,13 @@ function submitRename() {
 
 function confirmDelete() {
   if (!currentDoc.value) return
-  ElMessage.success('删除成功')
-  documentList.value = documentList.value.filter(d => d.id !== currentDoc.value.id)
-  showDeleteDialog.value = false
+  deleteDocument(currentDoc.value.id, () => {
+    ElMessage.success('删除成功')
+    documentList.value = documentList.value.filter(d => d.id !== currentDoc.value.id)
+    showDeleteDialog.value = false
+  }, (msg) => {
+    ElMessage.error(msg || '删除失败')
+  })
 }
 
 // 取消收藏
@@ -531,35 +542,48 @@ function handleUpload() {
   }
 
   uploading.value = true
-  if (selectedFiles.value.length === 1) {
+  uploadProgress.value = 0
+
+  // 显示提交成功提示
+  ElMessage({ message: '提交成功，正在分析和审核文件', type: 'success', duration: 3000 })
+
+  // 记录文件列表
+  const filesToUpload = [...selectedFiles.value]
+
+  // 后台上传
+  if (filesToUpload.length === 1) {
     // 单个文件上传
-    uploadDocument(selectedFiles.value[0], (percent) => {
-      console.log('上传进度:', percent)
+    uploadDocument(filesToUpload[0], (percent) => {
+      uploadProgress.value = percent
     }, (data) => {
-      ElMessage.success('上传成功')
+      ElMessage({ message: `上传成功！成功上传 1/1 个文件`, type: 'success', duration: 5000 })
       showUploadDialog.value = false
       uploading.value = false
+      uploadProgress.value = 0
       selectedFiles.value = []
       uploadRef.value?.clearFiles()
       loadDocuments()
     }, (msg) => {
-      ElMessage.error(msg || '上传失败')
+      ElMessage.error(`${filesToUpload[0].name} 上传失败: ${msg || '未知错误'}`)
       uploading.value = false
+      uploadProgress.value = 0
     })
   } else {
     // 多文件上传
-    uploadMultipleDocuments(selectedFiles.value, (percent) => {
-      console.log('上传进度:', percent)
+    uploadMultipleDocuments(filesToUpload, (percent) => {
+      uploadProgress.value = percent
     }, (data) => {
-      ElMessage.success(`成功上传 ${data.length} 个文件`)
+      ElMessage({ message: `上传成功！成功上传 ${data.length}/${filesToUpload.length} 个文件`, type: 'success', duration: 5000 })
       showUploadDialog.value = false
       uploading.value = false
+      uploadProgress.value = 0
       selectedFiles.value = []
       uploadRef.value?.clearFiles()
       loadDocuments()
     }, (msg) => {
-      ElMessage.error(msg || '上传失败')
+      ElMessage.error(`部分文件上传失败: ${msg || '未知错误'}`)
       uploading.value = false
+      uploadProgress.value = 0
     })
   }
 }

@@ -157,10 +157,10 @@ public class TencentCosFileService implements FileService {
                 }
             }
 
-            // 确保使用HTTP而不是HTTPS
-            if (previewUrl.startsWith("https://")) {
-                previewUrl = previewUrl.replace("https://", "http://");
-            }
+//            // 确保使用HTTP而不是HTTPS
+//            if (previewUrl.startsWith("https://")) {
+//                previewUrl = previewUrl.replace("https://", "http://");
+//            }
 
             // 添加文档预览参数
             if (previewUrl.contains("?")) {
@@ -251,6 +251,37 @@ public class TencentCosFileService implements FileService {
         } catch (Exception e) {
             log.error("腾讯云COS文件下载失败", e);
             throw new RuntimeException("文件下载失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public String getConvertUrl(String filePath, String targetFormat) {
+        if (filePath == null || filePath.isEmpty()) {
+            return null;
+        }
+        try {
+            // 确保使用自定义域名
+            String convertUrl = filePath;
+
+            // 如果有自定义域名，替换默认域名
+            if (customDomain != null && !customDomain.isEmpty()) {
+                String defaultHost = "https://" + bucketName + "." + region + ".myqcloud.com/";
+                if (convertUrl.startsWith(defaultHost)) {
+                    convertUrl = convertUrl.replace(defaultHost, customDomain + "/");
+                }
+            }
+
+            // 添加文档转换参数
+            if (convertUrl.contains("?")) {
+                convertUrl += "&ci-process=doc-preview&dstType=" + targetFormat;
+            } else {
+                convertUrl += "?ci-process=doc-preview&dstType=" + targetFormat;
+            }
+
+            return convertUrl;
+        } catch (Exception e) {
+            log.error("获取文档转换URL失败", e);
+            return null;
         }
     }
 

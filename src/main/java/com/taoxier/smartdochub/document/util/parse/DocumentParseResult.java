@@ -3,6 +3,7 @@ package com.taoxier.smartdochub.document.util.parse;
 import com.taoxier.smartdochub.document.model.entity.ContentChunk;
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -21,5 +22,5 @@ public class DocumentParseResult {
     /** 总字符数 */
     private int characterCount;
     /** 内容分块列表（按类型区分） */
-    private List<ContentChunk> chunks;
+    private List<ContentChunk> chunks = new ArrayList<>();
 }

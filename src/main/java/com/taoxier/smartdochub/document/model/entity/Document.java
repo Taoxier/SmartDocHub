@@ -218,6 +218,12 @@ public class Document implements Serializable {
     private Integer favoriteCount;
 
     /**
+     * 用户平均评分
+     */
+    @TableField("avg_rating")
+    private BigDecimal avgRating;
+
+    /**
      * 创建时间
      */
     @TableField("create_time")
@@ -246,4 +252,16 @@ public class Document implements Serializable {
      */
     @TableField("version_count")
     private Integer versionCount;
+
+    /**
+     * 审核状态: PENDING(待审核), AUDITING(审核中), APPROVED(通过), REJECTED(拒绝)
+     */
+    @TableField("audit_status")
+    private String auditStatus;
+
+    /**
+     * 审核结果信息
+     */
+    @TableField("audit_result")
+    private String auditResult;
 }

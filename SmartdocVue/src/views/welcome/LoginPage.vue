@@ -31,7 +31,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="12" style="text-align: right">
-            <el-link type="warning" @click="router.push('/forget')">忘记密码？</el-link>
+            <el-link type="warning" @click="router.push('/welcome/forget')">忘记密码？</el-link>
           </el-col>
         </el-row>
       </el-form>
@@ -43,7 +43,7 @@
       <span style="color: #999;font-size: 13px">没有账号？</span>
     </el-divider>
     <div>
-      <el-button style="width: 100%" size="large" @click="router.push('/register')" plain>注册账号</el-button>
+      <el-button style="width: 100%" size="large" @click="router.push('/welcome/register')" plain>注册账号</el-button>
     </div>
   </div>
 </template>

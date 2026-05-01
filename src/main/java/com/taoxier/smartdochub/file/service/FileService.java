@@ -54,4 +54,15 @@ public interface FileService {
      */
     void downloadFile(String filePath, java.io.OutputStream outputStream);
 
+    /**
+     * 获取文档格式转换URL
+     *
+     * @param filePath     文件完整URL
+     * @param targetFormat 目标格式
+     * @return 转换URL
+     */
+    default String getConvertUrl(String filePath, String targetFormat) {
+        return null;
+    }
+
 }

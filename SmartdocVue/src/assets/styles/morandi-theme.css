@@ -1,0 +1,253 @@
+/**
+ * SmartDocHub 莫兰迪色系主题配置
+ * 用于覆盖 Element Plus 默认按钮颜色
+ * 莫兰迪色系特点：柔和舒适、饱和度适中、灰度适中
+ */
+
+/* 覆盖 Element Plus CSS 变量实现莫兰迪色系 */
+:root {
+  /* Primary 蓝色 - 蓝紫色系（更浅、偏紫） */
+  --el-color-primary: #8898E0;
+  --el-color-primary-light-3: #A4B0E8;
+  --el-color-primary-light-5: #B8C3F0;
+  --el-color-primary-light-7: #D0D6F5;
+  --el-color-primary-light-8: #DCE1F7;
+  --el-color-primary-light-9: #EBEEFA;
+  --el-color-primary-dark-2: #7488D0;
+
+  /* Success 绿色 - 莫兰迪绿（饱和度适中） */
+  --el-color-success: #72AD72;
+  --el-color-success-light-3: #96C296;
+  --el-color-success-light-5: #B0D4B0;
+  --el-color-success-light-7: #C8E4C8;
+  --el-color-success-light-8: #DCEEDE;
+  --el-color-success-light-9: #EEF6EE;
+  --el-color-success-dark-2: #5E9A5E;
+
+  /* Warning 橙色 - 莫兰迪橙（更鲜艳、灰度高） */
+  --el-color-warning: #E08050;
+  --el-color-warning-light-3: #E89A70;
+  --el-color-warning-light-5: #F0B090;
+  --el-color-warning-light-7: #F5CAC0;
+  --el-color-warning-light-8: #F7D5CA;
+  --el-color-warning-light-9: #FAEBE5;
+  --el-color-warning-dark-2: #C87040;
+
+  /* Danger 红色 - 莫兰迪红（饱和度适中） */
+  --el-color-danger: #C07070;
+  --el-color-danger-light-3: #D49090;
+  --el-color-danger-light-5: #E0AAAA;
+  --el-color-danger-light-7: #EACECE;
+  --el-color-danger-light-8: #F0DEDE;
+  --el-color-danger-light-9: #F6EEEE;
+  --el-color-danger-dark-2: #AA5858;
+
+  /* Info 灰色 - 莫兰迪灰（饱和度适中） */
+  --el-color-info: #909090;
+  --el-color-info-light-3: #A8A8A8;
+  --el-color-info-light-5: #BDBDBD;
+  --el-color-info-light-7: #D0D0D0;
+  --el-color-info-light-8: #E0E0E0;
+  --el-color-info-light-9: #EFEFEF;
+  --el-color-info-dark-2: #787878;
+}
+
+/* 按钮通用样式优化 - 让按钮文字更清晰 */
+.el-button {
+  font-weight: 500;
+}
+
+/* Primary 按钮蓝紫色系 */
+.el-button--primary {
+  background-color: #8898E0 !important;
+  border-color: #8898E0 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus {
+  background-color: #A4B0E8 !important;
+  border-color: #A4B0E8 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--primary:active {
+  background-color: #7488D0 !important;
+  border-color: #7488D0 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--primary.is-disabled {
+  background-color: #C8D0F0 !important;
+  border-color: #C8D0F0 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--primary.is-plain {
+  background-color: #EBEEFA !important;
+  border-color: #B8C3F0 !important;
+  color: #8898E0 !important;
+}
+
+.el-button--primary.is-plain:hover,
+.el-button--primary.is-plain:focus {
+  background-color: #8898E0 !important;
+  border-color: #8898E0 !important;
+  color: #FFFFFF !important;
+}
+
+/* Success 按钮莫兰迪绿色系 */
+.el-button--success {
+  background-color: #72AD72 !important;
+  border-color: #72AD72 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--success:hover,
+.el-button--success:focus {
+  background-color: #96C296 !important;
+  border-color: #96C296 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--success:active {
+  background-color: #5E9A5E !important;
+  border-color: #5E9A5E !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--success.is-disabled {
+  background-color: #B8D8B8 !important;
+  border-color: #B8D8B8 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--success.is-plain {
+  background-color: #EEF6EE !important;
+  border-color: #B0D4B0 !important;
+  color: #72AD72 !important;
+}
+
+.el-button--success.is-plain:hover,
+.el-button--success.is-plain:focus {
+  background-color: #72AD72 !important;
+  border-color: #72AD72 !important;
+  color: #FFFFFF !important;
+}
+
+/* Warning 按钮莫兰迪橙色系 */
+.el-button--warning {
+  background-color: #E08050 !important;
+  border-color: #E08050 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--warning:hover,
+.el-button--warning:focus {
+  background-color: #E89A70 !important;
+  border-color: #E89A70 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--warning:active {
+  background-color: #C87040 !important;
+  border-color: #C87040 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--warning.is-disabled {
+  background-color: #F5CAC0 !important;
+  border-color: #F5CAC0 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--warning.is-plain {
+  background-color: #FAEBE5 !important;
+  border-color: #F0B090 !important;
+  color: #E08050 !important;
+}
+
+.el-button--warning.is-plain:hover,
+.el-button--warning.is-plain:focus {
+  background-color: #E08050 !important;
+  border-color: #E08050 !important;
+  color: #FFFFFF !important;
+}
+
+/* Danger 按钮莫兰迪红色系 */
+.el-button--danger {
+  background-color: #C07070 !important;
+  border-color: #C07070 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--danger:hover,
+.el-button--danger:focus {
+  background-color: #D49090 !important;
+  border-color: #D49090 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--danger:active {
+  background-color: #AA5858 !important;
+  border-color: #AA5858 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--danger.is-disabled {
+  background-color: #E0C0C0 !important;
+  border-color: #E0C0C0 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--danger.is-plain {
+  background-color: #F6EEEE !important;
+  border-color: #E0AAAA !important;
+  color: #C07070 !important;
+}
+
+.el-button--danger.is-plain:hover,
+.el-button--danger.is-plain:focus {
+  background-color: #C07070 !important;
+  border-color: #C07070 !important;
+  color: #FFFFFF !important;
+}
+
+/* Info 按钮莫兰迪灰色系 */
+.el-button--info {
+  background-color: #909090 !important;
+  border-color: #909090 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--info:hover,
+.el-button--info:focus {
+  background-color: #A8A8A8 !important;
+  border-color: #A8A8A8 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--info:active {
+  background-color: #787878 !important;
+  border-color: #787878 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--info.is-disabled {
+  background-color: #C8C8C8 !important;
+  border-color: #C8C8C8 !important;
+  color: #FFFFFF !important;
+}
+
+.el-button--info.is-plain {
+  background-color: #EFEFEF !important;
+  border-color: #BDBDBD !important;
+  color: #909090 !important;
+}
+
+.el-button--info.is-plain:hover,
+.el-button--info.is-plain:focus {
+  background-color: #909090 !important;
+  border-color: #909090 !important;
+  color: #FFFFFF !important;
+}

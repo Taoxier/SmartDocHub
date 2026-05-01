@@ -27,6 +27,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+
 import com.taoxier.smartdochub.common.exception.BusinessException;
 import com.taoxier.smartdochub.common.result.ResultCode;
 import com.taoxier.smartdochub.core.security.token.JwtTokenManager;
@@ -161,9 +163,39 @@ public class DocumentController {
     public void downloadDocumentVersion(
             @Parameter(description = "文档ID") @PathVariable Long documentId,
             @Parameter(description = "版本号") @PathVariable Integer versionNumber,
+            @Parameter(description = "用户ID") @RequestHeader("X-User-Id") Long userId,
             HttpServletResponse response) {
-        Long userId = getCurrentUserId();
         documentService.downloadDocumentVersion(documentId, versionNumber, userId, response);
+    }
+
+    @GetMapping("/version/diff")
+    @Operation(summary = "获取两个版本之间的差异")
+    public Result<Map<String, Object>> getVersionDiff(
+            @Parameter(description = "文档ID") @RequestParam Long documentId,
+            @Parameter(description = "版本1") @RequestParam Integer version1,
+            @Parameter(description = "版本2") @RequestParam Integer version2) {
+        try {
+            Map<String, Object> diff = documentService.getVersionDiff(documentId, version1, version2);
+            return Result.success(diff);
+        } catch (Exception e) {
+            log.error("获取版本差异失败: {}", e.getMessage());
+            return Result.failed("获取版本差异失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/version/rollback")
+    @Operation(summary = "回滚到指定版本")
+    public Result<Document> rollbackToVersion(
+            @Parameter(description = "文档ID") @RequestParam Long documentId,
+            @Parameter(description = "版本号") @RequestParam Integer versionNumber,
+            @Parameter(description = "用户ID") @RequestHeader("X-User-Id") Long userId) {
+        try {
+            Document document = documentService.rollbackToVersion(documentId, versionNumber, userId);
+            return Result.success(document);
+        } catch (Exception e) {
+            log.error("版本回滚失败: {}", e.getMessage());
+            return Result.failed("版本回滚失败: " + e.getMessage());
+        }
     }
 
     @DeleteMapping("/{id}")
@@ -191,16 +223,6 @@ public class DocumentController {
         Long userId = getCurrentUserId();
         Document existingDoc = documentService.checkDuplicateByHash(fileHash, userId);
         return Result.success(existingDoc);
-    }
-
-    @PostMapping("/rate/{id}")
-    @Operation(summary = "评分文档")
-    public Result<Void> rateDocument(
-            @Parameter(description = "文档ID") @PathVariable Long id,
-            @Parameter(description = "评分值(1-5)") @RequestParam Byte ratingValue) {
-        Long userId = getCurrentUserId();
-        userBehaviorService.recordRating(userId, id, ratingValue);
-        return Result.success();
     }
 
     @PostMapping("/search")
@@ -282,6 +304,20 @@ public class DocumentController {
     public Result<Void> batchRemoveFavorite(@RequestBody java.util.List<Long> documentIds) {
         Long userId = getCurrentUserId();
         documentService.batchRemoveFavorite(userId, documentIds);
+        return Result.success();
+    }
+
+    @PostMapping("/rate/{id}")
+    @Operation(summary = "为文档评分")
+    public Result<Void> rateDocument(
+            @Parameter(description = "文档ID") @PathVariable Long id,
+            @Parameter(description = "质量评分") @RequestParam Byte qualityRating,
+            @Parameter(description = "可读性评分") @RequestParam Byte readabilityRating) {
+        Long userId = getCurrentUserId();
+        // 转换为BigDecimal
+        java.math.BigDecimal qualityScore = new java.math.BigDecimal(qualityRating);
+        java.math.BigDecimal readabilityScore = new java.math.BigDecimal(readabilityRating);
+        documentService.rateDocument(id, userId, qualityScore, readabilityScore);
         return Result.success();
     }
 

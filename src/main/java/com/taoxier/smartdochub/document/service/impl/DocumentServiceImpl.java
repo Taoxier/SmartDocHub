@@ -4,6 +4,7 @@ import cn.hutool.core.io.FileUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.taoxier.smartdochub.common.exception.BusinessException;
@@ -26,6 +27,10 @@ import com.taoxier.smartdochub.document.service.UserBehaviorService;
 import com.taoxier.smartdochub.document.service.SimilarityDetectionService;
 import com.taoxier.smartdochub.document.service.KgService;
 import com.taoxier.smartdochub.document.service.AiDetectionService;
+import com.taoxier.smartdochub.document.service.SentenceVectorService;
+import com.taoxier.smartdochub.document.service.DocumentVectorService;
+import com.taoxier.smartdochub.document.service.AiAnalysisService;
+import com.taoxier.smartdochub.document.model.entity.AiAnalysisResult;
 import com.taoxier.smartdochub.document.util.parse.DocumentParser;
 import com.taoxier.smartdochub.document.util.parse.DocumentParseResult;
 import com.taoxier.smartdochub.document.model.vo.DocumentDetailVO;
@@ -57,8 +62,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import com.alibaba.fastjson.JSON;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> implements DocumentService {
 
@@ -75,6 +83,10 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
     private final SimilarityDetectionService similarityDetectionService;
     private final KgService kgService;
     private final AiDetectionService aiDetectionService;
+    private final AiAnalysisService aiAnalysisService;
+    private final SentenceVectorService sentenceVectorService;
+    private final DocumentVectorService documentVectorService;
+    private final com.taoxier.smartdochub.document.service.DocumentAuditService documentAuditService;
 
     @Override
     @Transactional
@@ -178,15 +190,96 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
             // 异步进行AI生成检测
             CompletableFuture.runAsync(() -> {
                 try {
-                    double aiProbability = aiDetectionService.detectDocumentAiGeneration(document.getId(),
+                    AiAnalysisResult aiAnalysisResult = aiDetectionService.detectDocumentAiGeneration(document.getId(),
                             parseResult.getFullText());
                     // 更新文档的AI生成概率
                     Document updateDoc = new Document();
                     updateDoc.setId(document.getId());
-                    updateDoc.setAiProbability(BigDecimal.valueOf(aiProbability));
+                    updateDoc.setAiProbability(aiAnalysisResult.getAiProbability());
+                    updateDoc.setDetectedAiModel(aiAnalysisResult.getDetectedModel());
                     this.updateById(updateDoc);
+
+                    // 保存或更新AI分析结果（使用saveOrUpdate避免唯一键冲突）
+                    aiAnalysisService.saveOrUpdateAnalysisResult(
+                            aiAnalysisResult.getDocumentId(),
+                            aiAnalysisResult.getAiProbability().doubleValue(),
+                            aiAnalysisResult.getConfidence().doubleValue(),
+                            aiAnalysisResult.getDetectedModel(),
+                            aiAnalysisResult.getKeyFeatures(),
+                            aiAnalysisResult.getResult());
                 } catch (Exception e) {
                     log.error("AI生成检测失败，文档ID: " + document.getId(), e);
+                }
+            });
+
+            // 异步计算语义向量
+            CompletableFuture.runAsync(() -> {
+                try {
+                    // 生成语义向量
+                    List<Double> vector = sentenceVectorService.generateVector(parseResult.getFullText());
+                    // 保存向量
+                    documentVectorService.saveOrUpdateVector(document.getId(), JSON.toJSONString(vector));
+                    log.info("语义向量计算完成，文档ID: {}", document.getId());
+                } catch (Exception e) {
+                    log.error("语义向量计算失败，文档ID: " + document.getId(), e);
+                }
+            });
+
+            // 异步提交文档审核任务到腾讯云
+            CompletableFuture.runAsync(() -> {
+                try {
+                    log.info("========== 开始文档审核流程 ==========");
+                    log.info("文档ID: {}, 存储路径: {}", document.getId(), document.getStoragePath());
+
+                    log.info("准备调用 aiService.auditDocument...");
+                    String result = aiService.auditDocument(document.getId(), "ALL", document.getStoragePath());
+                    log.info("审核结果: {}", result);
+
+                    Document auditResultDoc = new Document();
+                    auditResultDoc.setId(document.getId());
+                    if (result.contains("\"status\": \"PASS\"")) {
+                        auditResultDoc.setAuditStatus("APPROVED");
+                    } else {
+                        auditResultDoc.setAuditStatus("REJECTED");
+                    }
+                    auditResultDoc.setAuditResult(result);
+                    this.updateById(auditResultDoc);
+
+                    try {
+                        com.taoxier.smartdochub.document.model.entity.DocumentAudit auditRecord = new com.taoxier.smartdochub.document.model.entity.DocumentAudit();
+                        auditRecord.setDocumentId(document.getId());
+                        auditRecord.setAuditType("ALL");
+                        auditRecord.setOperator("SYSTEM");
+                        if (result.contains("\"status\": \"PASS\"")) {
+                            auditRecord.setOverallStatus("PASS");
+                            auditRecord.setTextStatus("PASS");
+                            auditRecord.setStatus("PASS");
+                        } else {
+                            auditRecord.setOverallStatus("REJECT");
+                            auditRecord.setTextStatus("REJECT");
+                            auditRecord.setStatus("REJECT");
+                        }
+                        auditRecord.setTextDetails(result);
+                        auditRecord.setAuditTime(java.time.LocalDateTime.now());
+                        documentAuditService.save(auditRecord);
+                        log.info("审核记录已写入doc_document_audit表，文档ID: {}", document.getId());
+                    } catch (Exception ex) {
+                        log.warn("写入审核记录表失败，不影响主流程，文档ID: {}", document.getId(), ex);
+                    }
+
+                    log.info("文档审核完成，文档ID: {}, 状态: {}", document.getId(), result);
+                    log.info("========== 文档审核流程结束 ==========");
+                } catch (Exception e) {
+                    log.error("文档审核失败，文档ID: " + document.getId(), e);
+                    try {
+                        Document updateDoc = new Document();
+                        updateDoc.setId(document.getId());
+                        updateDoc.setAuditStatus("REJECTED");
+                        updateDoc.setAuditResult("审核失败: " + e.getMessage());
+                        this.updateById(updateDoc);
+                    } catch (Exception ex) {
+                        log.error("更新文档审核状态失败，文档ID: " + document.getId(), ex);
+                    }
                 }
             });
 
@@ -358,15 +451,38 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
             // 异步进行AI生成检测
             CompletableFuture.runAsync(() -> {
                 try {
-                    double aiProbability = aiDetectionService.detectDocumentAiGeneration(document.getId(),
+                    AiAnalysisResult aiAnalysisResult = aiDetectionService.detectDocumentAiGeneration(document.getId(),
                             parseResult.getFullText());
                     // 更新文档的AI生成概率
                     Document updateDoc = new Document();
                     updateDoc.setId(document.getId());
-                    updateDoc.setAiProbability(BigDecimal.valueOf(aiProbability));
+                    updateDoc.setAiProbability(aiAnalysisResult.getAiProbability());
+                    updateDoc.setDetectedAiModel(aiAnalysisResult.getDetectedModel());
                     this.updateById(updateDoc);
+
+                    // 保存或更新AI分析结果（使用saveOrUpdate避免唯一键冲突）
+                    aiAnalysisService.saveOrUpdateAnalysisResult(
+                            aiAnalysisResult.getDocumentId(),
+                            aiAnalysisResult.getAiProbability().doubleValue(),
+                            aiAnalysisResult.getConfidence().doubleValue(),
+                            aiAnalysisResult.getDetectedModel(),
+                            aiAnalysisResult.getKeyFeatures(),
+                            aiAnalysisResult.getResult());
                 } catch (Exception e) {
                     log.error("AI生成检测失败，文档ID: " + document.getId(), e);
+                }
+            });
+
+            // 异步计算语义向量
+            CompletableFuture.runAsync(() -> {
+                try {
+                    // 生成语义向量
+                    List<Double> vector = sentenceVectorService.generateVector(parseResult.getFullText());
+                    // 保存向量
+                    documentVectorService.saveOrUpdateVector(document.getId(), JSON.toJSONString(vector));
+                    log.info("语义向量计算完成，文档ID: " + document.getId());
+                } catch (Exception e) {
+                    log.error("语义向量计算失败，文档ID: " + document.getId(), e);
                 }
             });
 
@@ -520,6 +636,13 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
         }).collect(Collectors.toList());
         detailVO.setTopics(topicVOs);
 
+        // 设置收藏状态
+        if (currentUserId != null) {
+            detailVO.setIsFavorite(userBehaviorService.hasFavorited(currentUserId, id));
+        } else {
+            detailVO.setIsFavorite(false);
+        }
+
         return detailVO;
     }
 
@@ -575,6 +698,13 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
         }).collect(Collectors.toList());
         detailVO.setTopics(topicVOs);
 
+        // 设置收藏状态
+        if (currentUserId != null) {
+            detailVO.setIsFavorite(userBehaviorService.hasFavorited(currentUserId, id));
+        } else {
+            detailVO.setIsFavorite(false);
+        }
+
         return detailVO;
     }
 
@@ -590,9 +720,13 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
             throw new BusinessException("无权删除该文档");
         }
 
-        document.setIsDeleted((byte) 1);
-        document.setUpdateTime(LocalDateTime.now());
-        this.updateById(document);
+        // 使用 UpdateWrapper 绕过 MyBatis-Plus 全局逻辑删除的 WHERE 条件
+        // 因为全局逻辑删除会在 updateById 的 WHERE 中添加 is_deleted = 0
+        LambdaUpdateWrapper<Document> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(Document::getId, id)
+                .set(Document::getIsDeleted, (byte) 1)
+                .set(Document::getUpdateTime, LocalDateTime.now());
+        this.update(updateWrapper);
 
         fileService.deleteFile(document.getStoragePath());
     }
@@ -930,6 +1064,15 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
     }
 
     @Override
+    public void updateAvgRating(Long documentId) {
+        java.math.BigDecimal avgRating = userBehaviorService.calculateAndUpdateAvgRating(documentId);
+        Document document = new Document();
+        document.setId(documentId);
+        document.setAvgRating(avgRating);
+        this.updateById(document);
+    }
+
+    @Override
     public void removeFavorite(Long userId, Long documentId) {
         // 删除用户对该文档的收藏记录
         userBehaviorService.removeByUserAndDocumentAndType(userId, documentId, "FAVORITE");
@@ -1158,6 +1301,34 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
     }
 
     @Override
+    public void rateDocument(Long documentId, Long userId, java.math.BigDecimal qualityScore,
+            java.math.BigDecimal readabilityScore) {
+        // 记录用户评分行为
+        Map<String, Object> extraData = new HashMap<>();
+        extraData.put("quality_score", qualityScore);
+        extraData.put("readability_score", readabilityScore);
+        userBehaviorService.recordBehavior(userId, documentId, "RATE", null);
+
+        // 更新文档评分
+        updateDocumentScores(documentId);
+    }
+
+    @Override
+    public void updateDocumentScores(Long documentId) {
+        // 计算该文档的平均质量评分和可读性评分
+        Map<String, java.math.BigDecimal> scores = userBehaviorService.calculateDocumentScores(documentId);
+        java.math.BigDecimal avgQualityScore = scores.get("qualityScore");
+        java.math.BigDecimal avgReadabilityScore = scores.get("readabilityScore");
+
+        // 更新文档的评分
+        Document document = new Document();
+        document.setId(documentId);
+        document.setQualityScore(avgQualityScore);
+        document.setReadabilityScore(avgReadabilityScore);
+        this.updateById(document);
+    }
+
+    @Override
     public java.util.Map<String, Object> getDocumentKnowledgeGraph(Long documentId) {
         // 调用KgService获取知识图谱数据
         return kgService.getDocumentKnowledgeGraph(documentId);
@@ -1245,6 +1416,10 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
             wrapper.eq(Document::getFileType, queryDTO.getFileType());
         }
 
+        if (org.springframework.util.StringUtils.hasText(queryDTO.getProcessStatus())) {
+            wrapper.eq(Document::getProcessStatus, queryDTO.getProcessStatus());
+        }
+
         if (org.springframework.util.StringUtils.hasText(queryDTO.getCategory())) {
             wrapper.eq(Document::getCategory, queryDTO.getCategory());
         }
@@ -1304,6 +1479,15 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
                     doc.setIsDeleted((byte) 1);
                     return doc;
                 }).collect(java.util.stream.Collectors.toList()));
+    }
+
+    @Override
+    public void updateAuditStatus(Long documentId, String auditStatus, String auditResult) {
+        Document doc = new Document();
+        doc.setId(documentId);
+        doc.setAuditStatus(auditStatus);
+        doc.setAuditResult(auditResult);
+        this.updateById(doc);
     }
 
     @Override
@@ -1395,5 +1579,262 @@ public class DocumentServiceImpl extends ServiceImpl<DocumentMapper, Document> i
         }
 
         return ratio;
+    }
+
+    @Override
+    public Map<String, Object> getVersionDiff(Long documentId, Integer version1, Integer version2) {
+        try {
+            DocumentVersion versionA = documentVersionMapper
+                    .selectOne(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<DocumentVersion>()
+                            .eq("document_id", documentId)
+                            .eq("version_number", version1));
+            DocumentVersion versionB = documentVersionMapper
+                    .selectOne(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<DocumentVersion>()
+                            .eq("document_id", documentId)
+                            .eq("version_number", version2));
+
+            if (versionA == null || versionB == null) {
+                throw new com.taoxier.smartdochub.common.exception.BusinessException("版本不存在");
+            }
+
+            List<com.taoxier.smartdochub.document.model.entity.ContentChunk> chunksA = contentChunkService.list(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.taoxier.smartdochub.document.model.entity.ContentChunk>()
+                            .eq(com.taoxier.smartdochub.document.model.entity.ContentChunk::getDocumentId, documentId)
+                            .eq(com.taoxier.smartdochub.document.model.entity.ContentChunk::getVersionNumber, version1)
+                            .orderByAsc(com.taoxier.smartdochub.document.model.entity.ContentChunk::getChunkIndex));
+
+            List<com.taoxier.smartdochub.document.model.entity.ContentChunk> chunksB = contentChunkService.list(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.taoxier.smartdochub.document.model.entity.ContentChunk>()
+                            .eq(com.taoxier.smartdochub.document.model.entity.ContentChunk::getDocumentId, documentId)
+                            .eq(com.taoxier.smartdochub.document.model.entity.ContentChunk::getVersionNumber, version2)
+                            .orderByAsc(com.taoxier.smartdochub.document.model.entity.ContentChunk::getChunkIndex));
+
+            com.taoxier.smartdochub.document.model.vo.VersionDiffVO diffResult = computeDiff(
+                    version1, version2, chunksA, chunksB);
+
+            Map<String, Object> result = new java.util.HashMap<>();
+            result.put("version1", version1);
+            result.put("version2", version2);
+            result.put("chunksA", diffResult.getChunksA());
+            result.put("chunksB", diffResult.getChunksB());
+            result.put("stats", diffResult.getStats());
+
+            return result;
+        } catch (Exception e) {
+            log.error("获取版本差异失败", e);
+            throw new com.taoxier.smartdochub.common.exception.BusinessException("获取版本差异失败: " + e.getMessage());
+        }
+    }
+
+    private com.taoxier.smartdochub.document.model.vo.VersionDiffVO computeDiff(
+            Integer version1, Integer version2,
+            List<com.taoxier.smartdochub.document.model.entity.ContentChunk> chunksA,
+            List<com.taoxier.smartdochub.document.model.entity.ContentChunk> chunksB) {
+
+        com.taoxier.smartdochub.document.model.vo.VersionDiffVO diffVO = new com.taoxier.smartdochub.document.model.vo.VersionDiffVO();
+        diffVO.setVersion1(version1);
+        diffVO.setVersion2(version2);
+
+        List<String> linesA = chunksA.stream()
+                .map(c -> c.getContentText() != null ? c.getContentText() : "")
+                .collect(java.util.stream.Collectors.toList());
+        List<String> linesB = chunksB.stream()
+                .map(c -> c.getContentText() != null ? c.getContentText() : "")
+                .collect(java.util.stream.Collectors.toList());
+
+        int[][] lcs = computeLCS(linesA, linesB);
+
+        List<com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk> diffChunksA = new java.util.ArrayList<>();
+        List<com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk> diffChunksB = new java.util.ArrayList<>();
+
+        int i = linesA.size() - 1;
+        int j = linesB.size() - 1;
+        int lineNumA = linesA.size();
+        int lineNumB = linesB.size();
+
+        int addedCount = 0, deletedCount = 0, modifiedCount = 0, unchangedCount = 0;
+
+        java.util.ArrayList<com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk> tempA = new java.util.ArrayList<>();
+        java.util.ArrayList<com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk> tempB = new java.util.ArrayList<>();
+
+        while (i >= 0 || j >= 0) {
+            if (i >= 0 && j >= 0 && linesA.get(i).equals(linesB.get(j))) {
+                com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk chunkA = new com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk();
+                chunkA.setLineNumber(lineNumA);
+                chunkA.setContent(linesA.get(i));
+                chunkA.setDiffType("UNCHANGED");
+                chunkA.setCounterpartLineNumber(lineNumB);
+                tempA.add(0, chunkA);
+
+                com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk chunkB = new com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk();
+                chunkB.setLineNumber(lineNumB);
+                chunkB.setContent(linesB.get(j));
+                chunkB.setDiffType("UNCHANGED");
+                chunkB.setCounterpartLineNumber(lineNumA);
+                tempB.add(0, chunkB);
+
+                unchangedCount++;
+                i--;
+                j--;
+                lineNumA--;
+                lineNumB--;
+            } else if (j >= 0 && (i < 0 || (i >= 0 && j >= 1 && lcs[i][j - 1] >= lcs[i - 1][j]))) {
+                com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk chunkB = new com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk();
+                chunkB.setLineNumber(lineNumB);
+                chunkB.setContent(linesB.get(j));
+                chunkB.setDiffType("ADDED");
+                chunkB.setCounterpartLineNumber(null);
+                tempB.add(0, chunkB);
+
+                addedCount++;
+                j--;
+                lineNumB--;
+            } else if (i >= 0) {
+                com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk chunkA = new com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffChunk();
+                chunkA.setLineNumber(lineNumA);
+                chunkA.setContent(linesA.get(i));
+                chunkA.setDiffType("DELETED");
+                chunkA.setCounterpartLineNumber(null);
+                tempA.add(0, chunkA);
+
+                deletedCount++;
+                i--;
+                lineNumA--;
+            }
+        }
+
+        int idxA = 0, idxB = 0;
+        while (idxA < tempA.size() || idxB < tempB.size()) {
+            if (idxA < tempA.size() && idxB < tempB.size() &&
+                    "DELETED".equals(tempA.get(idxA).getDiffType()) && "ADDED".equals(tempB.get(idxB).getDiffType())) {
+                diffChunksA.add(tempA.get(idxA));
+                diffChunksB.add(tempB.get(idxB));
+                idxA++;
+                idxB++;
+            } else if (idxA < tempA.size()
+                    && (idxB >= tempB.size() || !"ADDED".equals(tempB.get(idxB).getDiffType()))) {
+                diffChunksA.add(tempA.get(idxA));
+                idxA++;
+            } else if (idxB < tempB.size()
+                    && (idxA >= tempA.size() || !"DELETED".equals(tempA.get(idxA).getDiffType()))) {
+                diffChunksB.add(tempB.get(idxB));
+                idxB++;
+            }
+        }
+
+        diffVO.setChunksA(diffChunksA);
+        diffVO.setChunksB(diffChunksB);
+
+        com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffStats stats = new com.taoxier.smartdochub.document.model.vo.VersionDiffVO.DiffStats();
+        stats.setAddedCount(addedCount);
+        stats.setDeletedCount(deletedCount);
+        stats.setModifiedCount(modifiedCount);
+        stats.setUnchangedCount(unchangedCount);
+        diffVO.setStats(stats);
+
+        return diffVO;
+    }
+
+    private int[][] computeLCS(List<String> linesA, List<String> linesB) {
+        int m = linesA.size();
+        int n = linesB.size();
+        int[][] lcs = new int[m + 1][n + 1];
+
+        for (int i = 1; i <= m; i++) {
+            for (int j = 1; j <= n; j++) {
+                if (linesA.get(i - 1).equals(linesB.get(j - 1))) {
+                    lcs[i][j] = lcs[i - 1][j - 1] + 1;
+                } else {
+                    lcs[i][j] = Math.max(lcs[i - 1][j], lcs[i][j - 1]);
+                }
+            }
+        }
+        return lcs;
+    }
+
+    @Override
+    @Transactional
+    public Document rollbackToVersion(Long documentId, Integer versionNumber, Long userId) {
+        try {
+            // 检查文档是否存在
+            Document document = getById(documentId);
+            if (document == null || document.getIsDeleted() == 1) {
+                throw new com.taoxier.smartdochub.common.exception.BusinessException("文档不存在");
+            }
+
+            // 检查是否是文档上传者
+            if (!document.getUploadUserId().equals(userId)) {
+                throw new com.taoxier.smartdochub.common.exception.BusinessException("只有文档上传者可以回滚版本");
+            }
+
+            // 检查版本是否存在
+            DocumentVersion version = documentVersionMapper
+                    .selectOne(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<DocumentVersion>()
+                            .eq("document_id", documentId)
+                            .eq("version_number", versionNumber));
+            if (version == null) {
+                throw new com.taoxier.smartdochub.common.exception.BusinessException("版本不存在");
+            }
+
+            // 创建新版本记录（回滚操作也视为一个新版本）
+            int newVersion = document.getCurrentVersion() + 1;
+            DocumentVersion newVersionRecord = new DocumentVersion();
+            newVersionRecord.setDocumentId(documentId);
+            newVersionRecord.setVersionNumber(newVersion);
+            newVersionRecord.setTitle(version.getTitle());
+            newVersionRecord.setOriginalFilename(version.getOriginalFilename());
+            newVersionRecord.setParsedContent(version.getParsedContent());
+            newVersionRecord.setStoragePath(version.getStoragePath());
+            newVersionRecord.setFileSize(version.getFileSize());
+            newVersionRecord.setFileType(version.getFileType());
+            newVersionRecord.setPageCount(version.getPageCount());
+            newVersionRecord.setWordCount(version.getWordCount());
+            newVersionRecord.setCharacterCount(version.getCharacterCount());
+            newVersionRecord.setUploadUserId(userId);
+            newVersionRecord.setCreateTime(java.time.LocalDateTime.now());
+            documentVersionMapper.insert(newVersionRecord);
+
+            // 复制版本的内容分块
+            List<com.taoxier.smartdochub.document.model.entity.ContentChunk> oldChunks = contentChunkService.list(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.taoxier.smartdochub.document.model.entity.ContentChunk>()
+                            .eq(com.taoxier.smartdochub.document.model.entity.ContentChunk::getDocumentId, documentId)
+                            .eq(com.taoxier.smartdochub.document.model.entity.ContentChunk::getVersionNumber,
+                                    versionNumber));
+
+            List<com.taoxier.smartdochub.document.model.entity.ContentChunk> newChunks = new java.util.ArrayList<>();
+            for (com.taoxier.smartdochub.document.model.entity.ContentChunk chunk : oldChunks) {
+                com.taoxier.smartdochub.document.model.entity.ContentChunk newChunk = new com.taoxier.smartdochub.document.model.entity.ContentChunk();
+                org.springframework.beans.BeanUtils.copyProperties(chunk, newChunk);
+                newChunk.setId(null);
+                newChunk.setVersionNumber(newVersion);
+                newChunk.setCreateTime(java.time.LocalDateTime.now());
+                newChunks.add(newChunk);
+            }
+            if (!newChunks.isEmpty()) {
+                contentChunkService.saveBatch(newChunks);
+            }
+
+            // 更新文档主表
+            document.setCurrentVersion(newVersion);
+            document.setVersionCount(document.getVersionCount() + 1);
+            document.setTitle(version.getTitle());
+            document.setOriginalFilename(version.getOriginalFilename());
+            document.setStoragePath(version.getStoragePath());
+            document.setFileSize(version.getFileSize());
+            document.setFileType(version.getFileType());
+            document.setPageCount(version.getPageCount());
+            document.setWordCount(version.getWordCount());
+            document.setCharacterCount(version.getCharacterCount());
+            document.setParsedContent(version.getParsedContent());
+            document.setUpdateTime(java.time.LocalDateTime.now());
+            updateById(document);
+
+            return document;
+        } catch (com.taoxier.smartdochub.common.exception.BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("版本回滚失败", e);
+            throw new com.taoxier.smartdochub.common.exception.BusinessException("版本回滚失败: " + e.getMessage());
+        }
     }
 }

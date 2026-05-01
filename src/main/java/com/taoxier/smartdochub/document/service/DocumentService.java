@@ -54,6 +54,8 @@ public interface DocumentService extends IService<Document> {
 
     void updateFavoriteCount(Long documentId);
 
+    void updateAvgRating(Long documentId);
+
     void removeFavorite(Long userId, Long documentId);
 
     String generateShareUrl(Long documentId);
@@ -107,6 +109,24 @@ public interface DocumentService extends IService<Document> {
      * @param documentIds 文档ID列表
      */
     void batchRemoveHistory(Long userId, java.util.List<Long> documentIds);
+
+    /**
+     * 为文档评分
+     * 
+     * @param documentId       文档ID
+     * @param userId           用户ID
+     * @param qualityScore     质量评分
+     * @param readabilityScore 可读性评分
+     */
+    void rateDocument(Long documentId, Long userId, java.math.BigDecimal qualityScore,
+            java.math.BigDecimal readabilityScore);
+
+    /**
+     * 更新文档评分
+     * 
+     * @param documentId 文档ID
+     */
+    void updateDocumentScores(Long documentId);
 
     /**
      * 获取文档知识图谱
@@ -182,6 +202,15 @@ public interface DocumentService extends IService<Document> {
     void batchDeleteDocuments(List<Long> ids);
 
     /**
+     * 更新文档审核状态
+     *
+     * @param documentId 文档ID
+     * @param auditStatus 审核状态
+     * @param auditResult 审核结果描述
+     */
+    void updateAuditStatus(Long documentId, String auditStatus, String auditResult);
+
+    /**
      * 获取管理员文档统计数据
      * 
      * @return 统计数据
@@ -191,4 +220,24 @@ public interface DocumentService extends IService<Document> {
     List<Map<String, Object>> getUploadTrend();
 
     List<Map<String, Object>> getDocumentTypeRatio();
+
+    /**
+     * 获取两个版本之间的差异
+     * 
+     * @param documentId 文档ID
+     * @param version1   版本1
+     * @param version2   版本2
+     * @return 差异结果
+     */
+    Map<String, Object> getVersionDiff(Long documentId, Integer version1, Integer version2);
+
+    /**
+     * 回滚到指定版本
+     * 
+     * @param documentId    文档ID
+     * @param versionNumber 版本号
+     * @param userId        用户ID
+     * @return 回滚后的文档
+     */
+    Document rollbackToVersion(Long documentId, Integer versionNumber, Long userId);
 }

@@ -2,15 +2,11 @@
   <div class="main-layout">
     <aside class="sidebar" :class="{ collapsed: isCollapsed }">
       <div class="logo">
-        <!-- <el-icon :size="28" color="#409eff">
-          <Setting />
-        </el-icon> -->
         <span v-show="!isCollapsed" class="logo-text">SmartDocHub 管理系统</span>
       </div>
 
       <el-menu :default-active="activeMenu" class="sidebar-menu" :collapse="isCollapsed" :collapse-transition="false"
         router>
-        <!-- 管理端菜单 -->
         <el-menu-item index="/admin/dashboard">
           <el-icon>
             <DataAnalysis />
@@ -88,9 +84,37 @@
         </div>
 
         <div class="header-right">
-          <el-badge :value="3" :max="99" class="notification-badge">
-            <el-button :icon="Bell" circle />
-          </el-badge>
+          <el-popover placement="bottom" :width="360" trigger="click" @show="loadNotices">
+            <template #reference>
+              <el-badge :value="unreadCount" :max="99" :hidden="unreadCount === 0" class="notification-badge">
+                <el-button :icon="Bell" circle />
+              </el-badge>
+            </template>
+            <div class="notice-panel">
+              <div class="notice-header">
+                <span class="notice-title">通知公告</span>
+                <el-button type="primary" link size="small" @click="handleReadAll">全部已读</el-button>
+              </div>
+              <div class="notice-list" v-loading="noticeLoading">
+                <div v-if="notices.length === 0" class="notice-empty">暂无通知</div>
+                <div
+                  v-for="notice in notices"
+                  :key="notice.id"
+                  class="notice-item"
+                  :class="{ unread: !notice.readStatus }"
+                  @click="handleNoticeClick(notice)"
+                >
+                  <div class="notice-item-title">
+                    <el-tag v-if="notice.level === 'H'" type="danger" size="small">紧急</el-tag>
+                    <el-tag v-else-if="notice.level === 'M'" type="warning" size="small">重要</el-tag>
+                    <el-tag v-else type="info" size="small">普通</el-tag>
+                    <span class="notice-item-text">{{ notice.title }}</span>
+                  </div>
+                  <div class="notice-item-time">{{ notice.publishTime }}</div>
+                </div>
+              </div>
+            </div>
+          </el-popover>
 
           <el-dropdown trigger="click">
             <div class="user-info">
@@ -120,11 +144,51 @@
         </router-view>
       </main>
     </div>
+
+    <el-dialog v-model="showProfileDialog" title="个人中心" width="550px">
+      <el-form :model="profileForm" ref="profileFormRef" label-width="80px" v-loading="profileLoading">
+        <el-form-item label="用户名">
+          <el-input v-model="profileForm.username" disabled></el-input>
+        </el-form-item>
+        <el-form-item label="昵称" prop="nickname">
+          <el-input v-model="profileForm.nickname" placeholder="请输入昵称"></el-input>
+        </el-form-item>
+        <el-form-item label="邮箱" prop="email">
+          <el-input v-model="profileForm.email" placeholder="请输入邮箱"></el-input>
+        </el-form-item>
+        <el-form-item label="手机号" prop="mobile">
+          <el-input v-model="profileForm.mobile" placeholder="请输入手机号"></el-input>
+        </el-form-item>
+        <el-form-item label="性别">
+          <el-radio-group v-model="profileForm.gender">
+            <el-radio :label="1">男</el-radio>
+            <el-radio :label="2">女</el-radio>
+            <el-radio :label="0">未知</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showProfileDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitProfile" :loading="profileSaving">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="showNoticeDetailDialog" title="通知详情" width="600px">
+      <div v-if="currentNotice" class="notice-detail">
+        <h3>{{ currentNotice.title }}</h3>
+        <div class="notice-meta">
+          <el-tag v-if="currentNotice.level === 'H'" type="danger" size="small">紧急</el-tag>
+          <el-tag v-else-if="currentNotice.level === 'M'" type="warning" size="small">重要</el-tag>
+          <span class="notice-time">{{ currentNotice.publishTime }}</span>
+        </div>
+        <div class="notice-content" v-html="currentNotice.content"></div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -133,13 +197,13 @@ import {
   Fold, Expand, FolderOpened, PriceTag, Monitor
 } from '@element-plus/icons-vue'
 import { logout, getUserInfo } from '@/net'
+import { getUserProfile, updateUserProfile, getMyNotices, getNoticeDetail, readAllNotices } from '@/api/admin'
 
 const route = useRoute()
 const router = useRouter()
 
 const isCollapsed = ref(false)
 
-// 获取用户信息
 const userInfo = computed(() => {
   return getUserInfo()
 })
@@ -147,8 +211,91 @@ const userInfo = computed(() => {
 const activeMenu = computed(() => route.path)
 const currentTitle = computed(() => route.meta?.title || '')
 
+const showProfileDialog = ref(false)
+const profileLoading = ref(false)
+const profileSaving = ref(false)
+const profileFormRef = ref()
+const profileForm = ref({
+  id: null,
+  username: '',
+  nickname: '',
+  email: '',
+  mobile: '',
+  gender: 0,
+  avatar: ''
+})
+
+const notices = ref([])
+const noticeLoading = ref(false)
+const unreadCount = ref(0)
+const showNoticeDetailDialog = ref(false)
+const currentNotice = ref(null)
+
 function handlePersonalCenter() {
-  ElMessage.info('个人中心功能正在开发中')
+  profileLoading.value = true
+  showProfileDialog.value = true
+  getUserProfile((data) => {
+    if (data) {
+      profileForm.value = {
+        id: data.id,
+        username: data.username || '',
+        nickname: data.nickname || '',
+        email: data.email || '',
+        mobile: data.mobile || '',
+        gender: data.gender || 0,
+        avatar: data.avatar || ''
+      }
+    }
+    profileLoading.value = false
+  }, (msg) => {
+    ElMessage.error(msg || '加载个人信息失败')
+    profileLoading.value = false
+  })
+}
+
+function submitProfile() {
+  profileSaving.value = true
+  updateUserProfile(profileForm.value, () => {
+    ElMessage.success('个人信息更新成功')
+    profileSaving.value = false
+    showProfileDialog.value = false
+  }, (msg) => {
+    ElMessage.error(msg || '更新失败')
+    profileSaving.value = false
+  })
+}
+
+function loadNotices() {
+  noticeLoading.value = true
+  getMyNotices({ pageNum: 1, pageSize: 10 }, (data) => {
+    const records = data.records || data.list || []
+    notices.value = records
+    unreadCount.value = records.filter(n => !n.readStatus).length
+    noticeLoading.value = false
+  }, () => {
+    noticeLoading.value = false
+  })
+}
+
+function handleNoticeClick(notice) {
+  getNoticeDetail(notice.id, (data) => {
+    currentNotice.value = data
+    showNoticeDetailDialog.value = true
+    notice.readStatus = true
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
+  }, (msg) => {
+    ElMessage.error(msg || '加载通知详情失败')
+  })
+}
+
+function handleReadAll() {
+  readAllNotices(() => {
+    notices.value.forEach(n => { n.readStatus = true })
+    unreadCount.value = 0
+    ElMessage.success('已全部标记为已读')
+  }, (msg) => {
+    ElMessage.error(msg || '操作失败')
+  })
 }
 
 function handleSystemSettings() {
@@ -158,6 +305,10 @@ function handleSystemSettings() {
 function handleLogout() {
   logout(() => router.push('/'))
 }
+
+onMounted(() => {
+  loadNotices()
+})
 </script>
 
 <style scoped>
@@ -193,7 +344,7 @@ function handleLogout() {
 .logo-text {
   font-size: 16px;
   font-weight: 600;
-  background: linear-gradient(135deg, #ff9800, #ff5722);
+  background: linear-gradient(135deg, #ff9800, #ff6637);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -216,7 +367,7 @@ function handleLogout() {
 }
 
 :deep(.el-menu-item.is-active) {
-  background: linear-gradient(135deg, #ff9800, #ff5722) !important;
+  background: linear-gradient(135deg, #FFB48A,#ff562290) !important;
   color: white !important;
 }
 
@@ -297,5 +448,98 @@ function handleLogout() {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.notice-panel {
+  max-height: 400px;
+}
+
+.notice-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 8px;
+}
+
+.notice-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.notice-list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.notice-empty {
+  text-align: center;
+  color: #999;
+  padding: 40px 0;
+}
+
+.notice-item {
+  padding: 10px 8px;
+  border-bottom: 1px solid #f5f5f5;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.notice-item:hover {
+  background-color: #f5f7fa;
+}
+
+.notice-item.unread {
+  background-color: #ecf5ff;
+}
+
+.notice-item.unread:hover {
+  background-color: #d9ecff;
+}
+
+.notice-item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.notice-item-text {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.notice-item-time {
+  font-size: 12px;
+  color: #999;
+  padding-left: 52px;
+}
+
+.notice-detail h3 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+}
+
+.notice-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.notice-time {
+  font-size: 13px;
+  color: #999;
+}
+
+.notice-content {
+  line-height: 1.8;
+  font-size: 14px;
 }
 </style>

@@ -2,6 +2,7 @@ package com.taoxier.smartdochub.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
 /**
@@ -12,6 +13,12 @@ public class RestTemplateConfig {
 
     @Bean
     public RestTemplate restTemplate() {
-        return new RestTemplate();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        // 连接超时时间（毫秒）- 30秒
+        factory.setConnectTimeout(30000);
+        // 读取超时时间（毫秒）- 120秒
+        factory.setReadTimeout(120000);
+        
+        return new RestTemplate(factory);
     }
 }

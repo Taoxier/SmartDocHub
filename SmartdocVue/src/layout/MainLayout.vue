@@ -8,7 +8,7 @@
         <span v-show="!isCollapsed" class="logo-text">SmartDocHub</span>
       </div>
 
-      <el-menu :default-active="activeMenu" class="sidebar-menu" :collapse="isCollapsed" :collapse-transition="false"
+      <el-menu :default-active="activeMenu" :default-openeds="['/user']" class="sidebar-menu" :collapse="isCollapsed" :collapse-transition="false"
         router>
         <!-- 客户端菜单 -->
         <el-menu-item index="/home">
@@ -114,7 +114,7 @@
 
     <!-- 快速上传对话框 -->
     <el-dialog v-model="showQuickUploadDialog" title="快速上传" width="500px" :close-on-click-modal="false">
-      <el-upload class="upload-area" drag :auto-upload="false" :limit="10" :on-change="handleFileChange"
+      <el-upload ref="uploadRef" class="upload-area" drag :auto-upload="false" :limit="10" :on-change="handleFileChange"
         :on-exceed="handleExceed" accept=".pdf,.doc,.docx,.txt">
         <el-icon class="el-icon--upload" :size="48">
           <UploadFilled />
@@ -140,7 +140,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -158,6 +158,7 @@ const searchKeyword = ref('')
 const showQuickUploadDialog = ref(false)
 const selectedFiles = ref([])
 const uploading = ref(false)
+const uploadRef = ref(null)
 
 // 获取用户信息
 const userInfo = computed(() => {
@@ -194,6 +195,10 @@ function handleLogout() {
 }
 
 function handleQuickUpload() {
+  selectedFiles.value = []
+  nextTick(() => {
+    uploadRef.value?.clearFiles()
+  })
   showQuickUploadDialog.value = true
 }
 
@@ -225,6 +230,7 @@ function handleUpload() {
       showQuickUploadDialog.value = false
       uploading.value = false
       selectedFiles.value = []
+      nextTick(() => uploadRef.value?.clearFiles())
     }, (msg) => {
       ElMessage.error(msg || '上传失败')
       uploading.value = false
@@ -238,6 +244,7 @@ function handleUpload() {
       showQuickUploadDialog.value = false
       uploading.value = false
       selectedFiles.value = []
+      nextTick(() => uploadRef.value?.clearFiles())
     }, (msg) => {
       ElMessage.error(msg || '上传失败')
       uploading.value = false
@@ -397,7 +404,7 @@ function handleUpload() {
 }
 
 :deep(.el-menu-item.is-active) {
-  background: linear-gradient(135deg, #ff9800, #ff5722) !important;
+  background: linear-gradient(135deg, #FFB48A, #ff562290) !important;
   color: white !important;
 }
 

@@ -110,11 +110,20 @@ public class DocumentDetailVO {
     @Schema(description = "收藏次数")
     private Integer favoriteCount;
 
+    @Schema(description = "用户平均评分")
+    private BigDecimal avgRating;
+
     @Schema(description = "创建时间")
     private LocalDateTime createTime;
 
     @Schema(description = "更新时间")
     private LocalDateTime updateTime;
+
+    @Schema(description = "当前版本号")
+    private Integer currentVersion;
+
+    @Schema(description = "是否已收藏")
+    private Boolean isFavorite;
 
     @Schema(description = "内容分块列表")
     private List<ContentChunkVO> chunks;

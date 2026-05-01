@@ -7,38 +7,47 @@
           <el-button type="primary" size="small" @click="addRole">新增角色</el-button>
         </div>
       </template>
-      
+
       <el-form :inline="true" :model="searchForm" class="search-form">
-        <el-form-item label="角色名称">
-          <el-input v-model="searchForm.roleName" placeholder="请输入角色名称" style="width: 200px"></el-input>
-        </el-form-item>
-        <el-form-item label="角色编码">
-          <el-input v-model="searchForm.roleCode" placeholder="请输入角色编码" style="width: 150px"></el-input>
+        <el-form-item label="关键字">
+          <el-input v-model="searchForm.keywords" placeholder="角色名称/编码" style="width: 200px" clearable></el-input>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search">搜索</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
-      
-      <el-table :data="roles" style="width: 100%" border>
-        <el-table-column type="selection" width="55"></el-table-column>
+
+      <el-table :data="roles" style="width: 100%" border v-loading="loading">
         <el-table-column prop="id" label="角色ID" width="80"></el-table-column>
-        <el-table-column prop="roleName" label="角色名称" width="150"></el-table-column>
-        <el-table-column prop="roleCode" label="角色编码" width="150"></el-table-column>
-        <el-table-column prop="description" label="角色描述" min-width="200"></el-table-column>
+        <el-table-column prop="name" label="角色名称" width="150"></el-table-column>
+        <el-table-column prop="code" label="角色编码" width="150"></el-table-column>
+        <el-table-column prop="sort" label="排序" width="80"></el-table-column>
+        <el-table-column prop="status" label="状态" width="100">
+          <template #default="scope">
+            <el-switch
+              v-model="scope.row.status"
+              :active-value="1"
+              :inactive-value="0"
+              active-text="启用"
+              inactive-text="禁用"
+              @change="handleStatusChange(scope.row)"
+            ></el-switch>
+          </template>
+        </el-table-column>
         <el-table-column prop="createTime" label="创建时间" width="180"></el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="scope">
             <el-button size="small" @click="editRole(scope.row.id)">编辑</el-button>
-            <el-button size="small" type="danger" @click="deleteRole(scope.row.id)">删除</el-button>
+            <el-button size="small" type="primary" @click="assignPermissions(scope.row.id)">分配权限</el-button>
+            <el-button size="small" type="danger" @click="deleteRole(scope.row.id, scope.row.name)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
-      
+
       <div class="pagination-container">
         <el-pagination
-          v-model:current-page="pagination.currentPage"
+          v-model:current-page="pagination.pageNum"
           v-model:page-size="pagination.pageSize"
           :page-sizes="[10, 20, 50, 100]"
           layout="total, sizes, prev, pager, next, jumper"
@@ -48,110 +57,159 @@
         ></el-pagination>
       </div>
     </el-card>
+
+    <el-dialog v-model="showPermDialog" title="分配菜单权限" width="500px">
+      <el-tree
+        ref="menuTreeRef"
+        :data="menuTree"
+        show-checkbox
+        node-key="id"
+        :default-checked-keys="checkedMenuIds"
+        :props="{ label: 'name', children: 'children' }"
+      ></el-tree>
+      <template #footer>
+        <el-button @click="showPermDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitPermissions" :loading="permLoading">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getRolePage, deleteRoles, updateRoleStatus, getRoleMenuIds, assignMenusToRole, getMenuList } from '@/api/admin'
 
 const router = useRouter()
+const loading = ref(false)
+const roles = ref([])
 
-// 搜索表单
 const searchForm = reactive({
-  roleName: '',
-  roleCode: ''
+  keywords: ''
 })
 
-// 分页信息
 const pagination = reactive({
-  currentPage: 1,
+  pageNum: 1,
   pageSize: 10,
   total: 0
 })
 
-// 角色列表
-const roles = ref([
-  {
-    id: 1,
-    roleName: '超级管理员',
-    roleCode: 'ROOT',
-    description: '拥有系统所有权限',
-    createTime: '2026-04-06 20:27:32'
-  },
-  {
-    id: 2,
-    roleName: '管理员',
-    roleCode: 'ADMIN',
-    description: '拥有系统管理权限',
-    createTime: '2026-04-06 20:27:32'
-  },
-  {
-    id: 3,
-    roleName: '普通用户',
-    roleCode: 'USER',
-    description: '普通用户权限',
-    createTime: '2026-04-06 20:27:32'
-  },
-  {
-    id: 4,
-    roleName: '游客',
-    roleCode: 'GUEST',
-    description: '游客权限',
-    createTime: '2026-04-06 20:27:32'
+const showPermDialog = ref(false)
+const permLoading = ref(false)
+const menuTree = ref([])
+const checkedMenuIds = ref([])
+const currentRoleId = ref(null)
+const menuTreeRef = ref()
+
+function loadRoles() {
+  loading.value = true
+  const params = {
+    pageNum: pagination.pageNum,
+    pageSize: pagination.pageSize,
+    keywords: searchForm.keywords
   }
-])
+  getRolePage(params, (data) => {
+    roles.value = data.records || data.list || []
+    pagination.total = data.total || 0
+    loading.value = false
+  }, (msg) => {
+    ElMessage.error(msg || '加载角色列表失败')
+    loading.value = false
+  })
+}
 
-// 搜索
 function search() {
-  console.log('搜索条件:', searchForm)
-  // 这里可以添加搜索API调用
+  pagination.pageNum = 1
+  loadRoles()
 }
 
-// 重置
 function reset() {
-  searchForm.roleName = ''
-  searchForm.roleCode = ''
+  searchForm.keywords = ''
+  pagination.pageNum = 1
+  loadRoles()
 }
 
-// 添加角色
 function addRole() {
   router.push('/admin/role-edit')
 }
 
-// 编辑角色
 function editRole(id) {
   router.push(`/admin/role-edit/${id}`)
 }
 
-// 删除角色
-function deleteRole(id) {
-  ElMessageBox.confirm('确定要删除这个角色吗？', '警告', {
+function deleteRole(id, name) {
+  ElMessageBox.confirm(`确定要删除角色「${name}」吗？`, '警告', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
-    console.log('删除角色:', id)
-    ElMessage.success('删除成功')
-    // 这里可以添加删除角色的API调用
-  }).catch(() => {
-    // 取消删除
+    deleteRoles(id, () => {
+      ElMessage.success('删除成功')
+      loadRoles()
+    }, (msg) => {
+      ElMessage.error(msg || '删除失败')
+    })
+  }).catch(() => {})
+}
+
+function handleStatusChange(row) {
+  updateRoleStatus(row.id, row.status, () => {
+    ElMessage.success('状态更新成功')
+  }, (msg) => {
+    ElMessage.error(msg || '状态更新失败')
+    row.status = row.status === 1 ? 0 : 1
   })
 }
 
-// 分页处理
+function assignPermissions(roleId) {
+  currentRoleId.value = roleId
+  checkedMenuIds.value = []
+  showPermDialog.value = true
+
+  getMenuList((data) => {
+    menuTree.value = data || []
+  }, (msg) => {
+    ElMessage.error(msg || '加载菜单树失败')
+  })
+
+  getRoleMenuIds(roleId, (data) => {
+    checkedMenuIds.value = data || []
+  }, (msg) => {
+    ElMessage.error(msg || '加载角色权限失败')
+  })
+}
+
+function submitPermissions() {
+  permLoading.value = true
+  const checkedKeys = menuTreeRef.value.getCheckedKeys()
+  const halfCheckedKeys = menuTreeRef.value.getHalfCheckedKeys()
+  const allKeys = [...checkedKeys, ...halfCheckedKeys]
+
+  assignMenusToRole(currentRoleId.value, allKeys, () => {
+    ElMessage.success('权限分配成功')
+    permLoading.value = false
+    showPermDialog.value = false
+  }, (msg) => {
+    ElMessage.error(msg || '权限分配失败')
+    permLoading.value = false
+  })
+}
+
 function handleSizeChange(size) {
   pagination.pageSize = size
-  console.log('每页条数:', size)
-  // 这里可以添加分页API调用
+  pagination.pageNum = 1
+  loadRoles()
 }
 
 function handleCurrentChange(current) {
   pagination.currentPage = current
-  console.log('当前页码:', current)
-  // 这里可以添加分页API调用
+  loadRoles()
 }
+
+onMounted(() => {
+  loadRoles()
+})
 </script>
 
 <style scoped>

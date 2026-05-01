@@ -51,12 +51,12 @@
             <div class="stat-item" v-if="doc.overallSimilarity !== undefined">
               <span class="stat-label">相似度</span>
               <span class="stat-value" :class="getSimilarityClass(doc.overallSimilarity)">{{ (doc.overallSimilarity *
-                100).toFixed(1) }}%</span>
+                100).toFixed(2) }}%</span>
             </div>
             <div class="stat-item" v-if="doc.aiProbability !== undefined">
               <span class="stat-label">AI率</span>
               <span class="stat-value" :class="getAIProbabilityClass(doc.aiProbability)">{{ (doc.aiProbability *
-                100).toFixed(1) }}%</span>
+                100).toFixed(2) }}%</span>
             </div>
           </div>
         </div>
@@ -94,12 +94,12 @@
               <div class="stat-item" v-if="doc.overallSimilarity !== undefined">
                 <span class="stat-label">相似度</span>
                 <span class="stat-value" :class="getSimilarityClass(doc.overallSimilarity)">{{ (doc.overallSimilarity *
-                  100).toFixed(1) }}%</span>
+                  100).toFixed(2) }}%</span>
               </div>
               <div class="stat-item" v-if="doc.aiProbability !== undefined">
                 <span class="stat-label">AI率</span>
                 <span class="stat-value" :class="getAIProbabilityClass(doc.aiProbability)">{{ (doc.aiProbability *
-                  100).toFixed(1) }}%</span>
+                  100).toFixed(2) }}%</span>
               </div>
             </div>
           </div>
@@ -134,12 +134,12 @@
               <div class="stat-item" v-if="doc.overallSimilarity !== undefined">
                 <span class="stat-label">相似度</span>
                 <span class="stat-value" :class="getSimilarityClass(doc.overallSimilarity)">{{ (doc.overallSimilarity *
-                  100).toFixed(1) }}%</span>
+                  100).toFixed(2) }}%</span>
               </div>
               <div class="stat-item" v-if="doc.aiProbability !== undefined">
                 <span class="stat-label">AI率</span>
                 <span class="stat-value" :class="getAIProbabilityClass(doc.aiProbability)">{{ (doc.aiProbability *
-                  100).toFixed(1) }}%</span>
+                  100).toFixed(2) }}%</span>
               </div>
             </div>
           </div>
@@ -174,12 +174,12 @@
               <div class="stat-item" v-if="doc.overallSimilarity !== undefined">
                 <span class="stat-label">相似度</span>
                 <span class="stat-value" :class="getSimilarityClass(doc.overallSimilarity)">{{ (doc.overallSimilarity *
-                  100).toFixed(1) }}%</span>
+                  100).toFixed(2) }}%</span>
               </div>
               <div class="stat-item" v-if="doc.aiProbability !== undefined">
                 <span class="stat-label">AI率</span>
                 <span class="stat-value" :class="getAIProbabilityClass(doc.aiProbability)">{{ (doc.aiProbability *
-                  100).toFixed(1) }}%</span>
+                  100).toFixed(2) }}%</span>
               </div>
             </div>
           </div>
@@ -551,7 +551,7 @@ function getAIProbabilityClass(aiProbability) {
   justify-content: space-between;
   align-items: center;
   padding: 24px 32px;
-  background: linear-gradient(135deg, #ff9800, #ff5722);
+  background: linear-gradient(135deg, #ffafbd, #fafeca);
   border-radius: 16px;
   margin-bottom: 24px;
   color: white;

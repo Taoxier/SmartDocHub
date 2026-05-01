@@ -51,13 +51,10 @@
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" @click="submitUpload">开始上传</el-button>
+          <el-button type="primary" @click="submitUpload" :loading="isUploading">开始上传</el-button>
           <el-button @click="resetForm">重置</el-button>
         </el-form-item>
       </el-form>
-
-      <el-progress v-if="uploadProgress > 0 && uploadProgress < 100" :percentage="uploadProgress"
-        :format="formatProgress"></el-progress>
     </el-card>
   </div>
 </template>
@@ -65,10 +62,9 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { UploadFilled } from '@element-plus/icons-vue'
+import { UploadFilled, Check, Close, Loading } from '@element-plus/icons-vue'
 import { uploadDocument } from '@/api/document'
 
-// 上传表单
 const uploadForm = reactive({
   title: '',
   description: '',
@@ -78,24 +74,17 @@ const uploadForm = reactive({
   files: []
 })
 
-// 表单验证规则
 const rules = {
   title: [
     { required: true, message: '请输入文档标题', trigger: 'blur' }
   ]
 }
 
-// 表单引用
 const formRef = ref()
 const uploadRef = ref()
-
-// 文件列表
 const fileList = ref([])
+const isUploading = ref(false)
 
-// 上传进度
-const uploadProgress = ref(0)
-
-// 分类列表
 const categories = ref([
   { id: 1, name: '技术文档' },
   { id: 2, name: '学术论文' },
@@ -103,21 +92,12 @@ const categories = ref([
   { id: 4, name: '其他文档' }
 ])
 
-// emit
 const emit = defineEmits(['refresh'])
 
-// 处理文件选择
-function handleFileChange(file, fileList) {
-  uploadForm.files = fileList.map(item => item.raw)
-  fileList.value = fileList
+function handleFileChange(file, files) {
+  uploadForm.files = files.map(item => item.raw)
 }
 
-// 格式化进度条
-function formatProgress(percentage) {
-  return `${percentage}%`
-}
-
-// 提交上传
 function submitUpload() {
   formRef.value.validate((valid) => {
     if (valid) {
@@ -126,41 +106,82 @@ function submitUpload() {
         return
       }
 
-      uploadProgress.value = 0
-      const totalFiles = uploadForm.files.length
-      let uploadedCount = 0
+      isUploading.value = true
+      ElMessage({ message: '提交成功，正在分析和审核文件', type: 'success', duration: 3000 })
 
-      uploadForm.files.forEach(file => {
-        uploadDocument(file,
-          (percent) => {
-            // 单个文件进度
-            uploadProgress.value = Math.round((uploadedCount * 100 + percent) / totalFiles)
-          },
-          (data) => {
-            uploadedCount++
-            if (uploadedCount === totalFiles) {
-              uploadProgress.value = 100
-              ElMessage.success('上传成功')
-              resetForm()
-              // 触发列表刷新
-              emit('refresh')
+      const fileErrors = []
+      const fileSuccess = []
+
+      const uploadPromises = uploadForm.files.map((file, index) => {
+        return new Promise((resolve) => {
+          uploadDocument(file,
+            (progress) => {
+              const fileItem = fileList.value.find(item => item.raw === file)
+              if (fileItem) {
+                fileItem.status = 'uploading'
+                fileItem.percentage = progress
+              }
+            },
+            (data) => {
+              fileSuccess.push({ index, name: file.name, data })
+              const fileItem = fileList.value.find(item => item.raw === file)
+              if (fileItem) {
+                fileItem.status = 'success'
+              }
+              resolve({ success: true, data })
+            },
+            (errorMsg, errorCode) => {
+              fileErrors.push({ index, name: file.name, errorMsg, errorCode })
+              const fileItem = fileList.value.find(item => item.raw === file)
+              if (fileItem) {
+                fileItem.status = 'error'
+              }
+              resolve({ success: false, errorMsg, errorCode })
             }
-          },
-          (error) => {
-            ElMessage.error('上传失败: ' + (error.message || '未知错误'))
-          }
-        )
+          )
+        })
+      })
+
+      Promise.all(uploadPromises).then(results => {
+        isUploading.value = false
+
+        const successCount = fileSuccess.length
+        const totalCount = results.length
+
+        if (successCount > 0) {
+          ElMessage({
+            message: `上传成功！成功上传 ${successCount}/${totalCount} 个文件`,
+            type: 'success',
+            duration: 5000
+          })
+          resetForm()
+          emit('refresh')
+        }
+
+        if (fileErrors.length > 0) {
+          fileErrors.forEach(fileError => {
+            ElMessage.error(`${fileError.name} 上传失败: ${fileError.errorMsg || '未知错误'}`)
+          })
+        }
+
+        if (successCount === 0 && fileErrors.length > 0) {
+          resetForm()
+        }
+      }).catch(error => {
+        isUploading.value = false
+        ElMessage.error('上传过程中发生错误: ' + (error.message || '未知错误'))
+        resetForm()
       })
     }
   })
 }
 
-// 重置表单
 function resetForm() {
-  formRef.value.resetFields()
+  if (formRef.value) {
+    formRef.value.resetFields()
+  }
   fileList.value = []
   uploadForm.files = []
-  uploadProgress.value = 0
 }
 </script>
 

@@ -41,6 +41,12 @@ public class UserBehavior implements Serializable {
     @TableField("rating_value")
     private Byte ratingValue;
 
+    @TableField("quality_rating")
+    private Byte qualityRating;
+
+    @TableField("readability_rating")
+    private Byte readabilityRating;
+
     @TableField("create_time")
     private LocalDateTime createTime;
 }

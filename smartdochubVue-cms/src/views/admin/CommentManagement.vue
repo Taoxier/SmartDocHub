@@ -4,221 +4,342 @@
       <template #header>
         <div class="card-header">
           <span>评论管理</span>
-          <el-button type="primary" size="small">批量操作</el-button>
+          <div class="header-actions">
+            <el-button type="success" size="small" @click="batchAudit('APPROVED')" :disabled="!selectedIds.length">
+              批量通过
+            </el-button>
+            <el-button type="danger" size="small" @click="batchAudit('REJECTED')" :disabled="!selectedIds.length">
+              批量拒绝
+            </el-button>
+          </div>
         </div>
       </template>
-      
+
       <el-form :inline="true" :model="searchForm" class="search-form">
-        <el-form-item label="文档标题">
-          <el-input v-model="searchForm.docTitle" placeholder="请输入文档标题" style="width: 200px"></el-input>
+        <el-form-item label="文档ID">
+          <el-input v-model="searchForm.documentId" placeholder="请输入文档ID" style="width: 120px"></el-input>
         </el-form-item>
-        <el-form-item label="评论用户">
-          <el-input v-model="searchForm.username" placeholder="请输入评论用户" style="width: 150px"></el-input>
+        <el-form-item label="关键词">
+          <el-input v-model="searchForm.keyword" placeholder="评论内容" style="width: 150px"></el-input>
         </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="searchForm.status" placeholder="请选择状态" style="width: 120px">
+        <el-form-item label="审核状态">
+          <el-select v-model="searchForm.auditStatus" placeholder="请选择" style="width: 130px" clearable>
             <el-option label="全部" value=""></el-option>
+            <el-option label="通过" value="APPROVED"></el-option>
+            <el-option label="拒绝" value="REJECTED"></el-option>
+            <el-option label="待人工审核" value="MANUAL_REVIEW"></el-option>
             <el-option label="待审核" value="PENDING"></el-option>
-            <el-option label="已通过" value="APPROVED"></el-option>
-            <el-option label="已拒绝" value="REJECTED"></el-option>
           </el-select>
-        </el-form-item>
-        <el-form-item label="时间范围">
-          <el-date-picker
-            v-model="searchForm.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            style="width: 200px"
-          ></el-date-picker>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search">搜索</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
-      
-      <el-table :data="comments" style="width: 100%" border>
+
+      <el-table :data="comments" style="width: 100%" border v-loading="loading"
+        @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="55"></el-table-column>
-        <el-table-column prop="id" label="评论ID" width="80"></el-table-column>
-        <el-table-column prop="docTitle" label="文档标题" min-width="200">
-          <template #default="scope">
-            <el-link type="primary" @click="viewDocument(scope.row.docId)">{{ scope.row.docTitle }}</el-link>
-          </template>
-        </el-table-column>
-        <el-table-column prop="username" label="评论用户" width="120"></el-table-column>
-        <el-table-column prop="content" label="评论内容" min-width="300">
+        <el-table-column prop="id" label="ID" width="70"></el-table-column>
+        <el-table-column prop="documentId" label="文档ID" width="80"></el-table-column>
+        <el-table-column prop="userId" label="用户ID" width="80"></el-table-column>
+        <el-table-column prop="content" label="评论内容" min-width="250">
           <template #default="scope">
             <div class="comment-content">{{ scope.row.content }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="rating" label="评分" width="80">
+        <el-table-column prop="auditStatus" label="审核状态" width="120">
           <template #default="scope">
-            <div class="rating">
-              <el-rate v-model="scope.row.rating" disabled show-score text-color="#ff9900"></el-rate>
-            </div>
+            <el-tag :type="getAuditStatusType(scope.row.auditStatus)" size="small">
+              {{ getAuditStatusText(scope.row.auditStatus) }}
+            </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="auditConfidence" label="置信度" width="90">
           <template #default="scope">
-            <el-tag :type="getStatusType(scope.row.status)">{{ scope.row.status }}</el-tag>
+            <span v-if="scope.row.auditConfidence != null"
+              :style="{ color: getConfidenceColor(scope.row.auditConfidence) }">
+              {{ (scope.row.auditConfidence * 100).toFixed(1) }}%
+            </span>
+            <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="评论时间" width="180"></el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column prop="auditReason" label="审核原因" min-width="150">
           <template #default="scope">
-            <el-button size="small" v-if="scope.row.status === 'PENDING'" type="primary" @click="approveComment(scope.row.id)">通过</el-button>
-            <el-button size="small" v-if="scope.row.status === 'PENDING'" type="danger" @click="rejectComment(scope.row.id)">拒绝</el-button>
-            <el-button size="small" type="danger" @click="deleteComment(scope.row.id)">删除</el-button>
+            <span>{{ scope.row.auditReason || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="createTime" label="评论时间" width="170">
+          <template #default="scope">
+            {{ formatDate(scope.row.createTime) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="220" fixed="right">
+          <template #default="scope">
+            <el-button size="small" type="primary" @click="viewDetail(scope.row)">详情</el-button>
+            <el-button size="small"
+              v-if="scope.row.auditStatus === 'MANUAL_REVIEW' || scope.row.auditStatus === 'PENDING'" type="success"
+              @click="manualAudit(scope.row, 'APPROVED')">通过</el-button>
+            <el-button size="small"
+              v-if="scope.row.auditStatus === 'MANUAL_REVIEW' || scope.row.auditStatus === 'PENDING'" type="danger"
+              @click="manualAudit(scope.row, 'REJECTED')">拒绝</el-button>
+            <el-button size="small" type="danger" @click="deleteComment(scope.row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
-      
+
       <div class="pagination-container">
-        <el-pagination
-          v-model:current-page="pagination.currentPage"
-          v-model:page-size="pagination.pageSize"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next, jumper"
-          :total="pagination.total"
-          @size-change="handleSizeChange"
-          @current-change="handleCurrentChange"
-        ></el-pagination>
+        <el-pagination :current-page="pagination.pageNum" :page-size="pagination.pageSize"
+          @update:current-page="pagination.pageNum = $event; handleCurrentChange($event)"
+          @update:page-size="pagination.pageSize = $event; handleSizeChange($event)" :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next, jumper" :total="pagination.total" @size-change="handleSizeChange"
+          @current-change="handleCurrentChange" />
       </div>
     </el-card>
+
+    <el-dialog v-model="showDetailDialog" title="评论详情" width="600px">
+      <el-descriptions :column="2" border v-if="currentComment">
+        <el-descriptions-item label="评论ID" :span="2">{{ currentComment.id }}</el-descriptions-item>
+        <el-descriptions-item label="文档ID">{{ currentComment.documentId }}</el-descriptions-item>
+        <el-descriptions-item label="用户ID">{{ currentComment.userId }}</el-descriptions-item>
+        <el-descriptions-item label="评论内容" :span="2">
+          <div style="white-space: pre-wrap; word-break: break-word;">{{ currentComment.content }}</div>
+        </el-descriptions-item>
+        <el-descriptions-item label="审核状态">
+          <el-tag :type="getAuditStatusType(currentComment.auditStatus)">
+            {{ getAuditStatusText(currentComment.auditStatus) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="置信度">
+          <span v-if="currentComment.auditConfidence != null"
+            :style="{ color: getConfidenceColor(currentComment.auditConfidence) }">
+            {{ (currentComment.auditConfidence * 100).toFixed(1) }}%
+          </span>
+          <span v-else>-</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="审核原因" :span="2">{{ currentComment.auditReason || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="审核时间">{{ formatDate(currentComment.auditTime) || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="评论时间">{{ formatDate(currentComment.createTime) }}</el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="showDetailDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="showAuditDialog" title="审核评论" width="400px">
+      <el-form :model="auditForm" ref="auditFormRef" label-width="80px">
+        <el-form-item label="评论内容">
+          <div class="audit-content">{{ auditForm.content }}</div>
+        </el-form-item>
+        <el-form-item label="审核结果">
+          <el-radio-group v-model="auditForm.result">
+            <el-radio label="APPROVED">通过</el-radio>
+            <el-radio label="REJECTED">拒绝</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="审核原因">
+          <el-input v-model="auditForm.reason" type="textarea" :rows="3" placeholder="请输入审核原因（可选）"></el-input>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAuditDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitAudit" :loading="auditLoading">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getAdminCommentPage, getAdminCommentDetail, auditComment, batchAuditComments, deleteComment as deleteCommentApi } from '@/api/admin'
 
-// 搜索表单
+const loading = ref(false)
+const comments = ref([])
+const selectedIds = ref([])
+const showDetailDialog = ref(false)
+const currentComment = ref(null)
+const showAuditDialog = ref(false)
+const auditLoading = ref(false)
+const auditFormRef = ref()
+
 const searchForm = reactive({
-  docTitle: '',
-  username: '',
-  status: '',
-  dateRange: []
+  documentId: '',
+  keyword: '',
+  auditStatus: ''
 })
 
-// 分页信息
 const pagination = reactive({
-  currentPage: 1,
+  pageNum: 1,
   pageSize: 10,
   total: 0
 })
 
-// 评论列表
-const comments = ref([
-  {
-    id: 1,
-    docId: 1,
-    docTitle: '毕设题目详解',
-    username: 'user1',
-    content: '这是一篇非常详细的文档，对我帮助很大！',
-    rating: 5,
-    status: 'APPROVED',
-    createTime: '2026-04-08 10:00:00'
-  },
-  {
-    id: 2,
-    docId: 1,
-    docTitle: '毕设题目详解',
-    username: 'user2',
-    content: '文档内容很全面，感谢分享！',
-    rating: 4,
-    status: 'PENDING',
-    createTime: '2026-04-08 11:00:00'
-  }
-])
+const auditForm = reactive({
+  id: null,
+  content: '',
+  result: 'APPROVED',
+  reason: ''
+})
 
-// 获取状态类型
-function getStatusType(status) {
-  switch (status) {
-    case 'PENDING':
-      return 'warning'
-    case 'APPROVED':
-      return 'success'
-    case 'REJECTED':
-      return 'danger'
-    default:
-      return ''
+function loadComments() {
+  loading.value = true
+  const params = {
+    pageNum: pagination.pageNum,
+    pageSize: pagination.pageSize,
+    documentId: searchForm.documentId || null,
+    keyword: searchForm.keyword || null,
+    auditStatus: searchForm.auditStatus || null
   }
+  getAdminCommentPage(params, (data) => {
+    comments.value = data.records || data.list || []
+    pagination.total = data.total || 0
+    loading.value = false
+  }, (msg) => {
+    ElMessage.error(msg || '加载评论列表失败')
+    loading.value = false
+  })
 }
 
-// 搜索
 function search() {
-  console.log('搜索条件:', searchForm)
-  // 这里可以添加搜索API调用
+  pagination.pageNum = 1
+  loadComments()
 }
 
-// 重置
 function reset() {
-  searchForm.docTitle = ''
-  searchForm.username = ''
-  searchForm.status = ''
-  searchForm.dateRange = []
+  searchForm.documentId = ''
+  searchForm.keyword = ''
+  searchForm.auditStatus = ''
+  pagination.pageNum = 1
+  loadComments()
 }
 
-// 查看文档
-function viewDocument(docId) {
-  console.log('查看文档:', docId)
-  // 这里可以添加查看文档的逻辑
+function handleSelectionChange(rows) {
+  selectedIds.value = rows.map(r => r.id)
 }
 
-// 批准评论
-function approveComment(id) {
-  console.log('批准评论:', id)
-  // 这里可以添加批准评论的API调用
-  ElMessage.success('评论已批准')
+function viewDetail(row) {
+  getAdminCommentDetail(row.id, (data) => {
+    currentComment.value = data
+    showDetailDialog.value = true
+  }, (msg) => {
+    ElMessage.error(msg || '加载评论详情失败')
+  })
 }
 
-// 拒绝评论
-function rejectComment(id) {
-  console.log('拒绝评论:', id)
-  // 这里可以添加拒绝评论的API调用
-  ElMessage.success('评论已拒绝')
+function manualAudit(row, result) {
+  auditForm.id = row.id
+  auditForm.content = row.content
+  auditForm.result = result
+  auditForm.reason = ''
+  showAuditDialog.value = true
 }
 
-// 删除评论
-function deleteComment(id) {
-  ElMessageBox.confirm('确定要删除这个评论吗？', '警告', {
+function submitAudit() {
+  auditLoading.value = true
+  auditComment(auditForm.id, auditForm.result, auditForm.reason, () => {
+    ElMessage.success('审核成功')
+    auditLoading.value = false
+    showAuditDialog.value = false
+    loadComments()
+  }, (msg) => {
+    ElMessage.error(msg || '审核失败')
+    auditLoading.value = false
+  })
+}
+
+function batchAudit(result) {
+  if (!selectedIds.value.length) {
+    ElMessage.warning('请先选择要审核的评论')
+    return
+  }
+  ElMessageBox.confirm(`确定要批量${result === 'APPROVED' ? '通过' : '拒绝'}选中的 ${selectedIds.value.length} 条评论吗？`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
-    console.log('删除评论:', id)
-    ElMessage.success('删除成功')
-    // 这里可以添加删除评论的API调用
-  }).catch(() => {
-    // 取消删除
-  })
+    batchAuditComments(selectedIds.value, result, '', () => {
+      ElMessage.success('批量审核成功')
+      loadComments()
+    }, (msg) => {
+      ElMessage.error(msg || '批量审核失败')
+    })
+  }).catch(() => { })
 }
 
-// 分页处理
+function deleteComment(row) {
+  ElMessageBox.confirm('确定要删除该评论吗？', '警告', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    deleteCommentApi(row.id, () => {
+      ElMessage.success('删除成功')
+      loadComments()
+    }, (msg) => {
+      ElMessage.error(msg || '删除失败')
+    })
+  }).catch(() => { })
+}
+
 function handleSizeChange(size) {
   pagination.pageSize = size
-  console.log('每页条数:', size)
-  // 这里可以添加分页API调用
+  pagination.pageNum = 1
+  loadComments()
 }
 
 function handleCurrentChange(current) {
-  pagination.currentPage = current
-  console.log('当前页码:', current)
-  // 这里可以添加分页API调用
+  pagination.pageNum = current
+  loadComments()
 }
+
+function getAuditStatusType(status) {
+  const map = { 'APPROVED': 'success', 'REJECTED': 'danger', 'MANUAL_REVIEW': 'warning', 'PENDING': 'info' }
+  return map[status] || 'info'
+}
+
+function getAuditStatusText(status) {
+  const map = { 'APPROVED': '通过', 'REJECTED': '拒绝', 'MANUAL_REVIEW': '待人工审核', 'PENDING': '待审核' }
+  return map[status] || status || '-'
+}
+
+function getConfidenceColor(val) {
+  if (val >= 0.8) return '#f56c6c'
+  if (val >= 0.5) return '#e6a23c'
+  return '#67c23a'
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+onMounted(() => {
+  loadComments()
+})
 </script>
 
 <style scoped>
 .comment-management {
-  padding: 20px;
+  padding: 10px;
+}
+
+.el-card {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  margin-bottom: 10px;
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .search-form {
@@ -229,16 +350,24 @@ function handleCurrentChange(current) {
   line-height: 1.4;
   white-space: normal;
   word-break: break-word;
-}
-
-.rating {
-  display: flex;
-  align-items: center;
+  max-height: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pagination-container {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+.audit-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f5f7fa;
+  padding: 10px;
+  border-radius: 4px;
+  max-height: 100px;
+  overflow-y: auto;
 }
 </style>

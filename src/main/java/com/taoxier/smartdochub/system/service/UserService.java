@@ -201,4 +201,12 @@ public interface UserService extends IService<User> {
      */
     boolean bindUserOpenId(Long userId, String openId);
 
+    /**
+     * 根据用户ID集合批量获取用户名
+     *
+     * @param userIds 用户ID集合
+     * @return {@link Map} 用户ID到用户名的映射
+     */
+    java.util.Map<Long, String> getUserNameMap(java.util.Set<Long> userIds);
+
 }

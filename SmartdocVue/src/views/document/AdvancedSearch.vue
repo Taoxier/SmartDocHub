@@ -11,13 +11,21 @@
         <div class="filter-section">
           <h3 class="filter-title">分类筛选</h3>
           <el-tree :data="categories" node-key="id" :props="categoryProps" @node-click="handleCategoryClick"
-            default-expand-all class="category-tree" />
+            class="category-tree" />
         </div>
 
         <!-- 热门标签 -->
         <div class="filter-section">
-          <h3 class="filter-title">热门标签</h3>
-          <div class="tag-cloud">
+          <div class="filter-header">
+            <h3 class="filter-title">热门标签</h3>
+            <el-button v-if="hotTags.length > 12" type="text" size="small" @click="toggleTagExpand">
+              {{ tagExpanded ? '收起' : '展开' }}
+              <el-icon :class="{ rotate: tagExpanded }">
+                <ArrowDown />
+              </el-icon>
+            </el-button>
+          </div>
+          <div class="tag-cloud" :class="{ 'tag-cloud-collapsed': !tagExpanded }">
             <el-tag v-for="tag in hotTags" :key="tag.id" :size="getTagSize(tag.count)"
               :class="['hot-tag', { active: selectedTags.includes(tag.topicValue) }]"
               @click="toggleTag(tag.topicValue)">
@@ -122,9 +130,9 @@
         </div>
 
         <div class="pagination-wrapper" v-if="total > 0">
-          <el-pagination v-model:current-page="pageNum" v-model:page-size="pageSize" :page-sizes="[20, 50, 100]"
-            :total="total" layout="sizes, prev, pager, next, jumper" @size-change="loadDocuments"
-            @current-change="loadDocuments" />
+          <el-pagination :current-page="pageNum" :page-size="pageSize" :page-sizes="[20, 50, 100]" :total="total"
+            layout="sizes, prev, pager, next, jumper" @size-change="handleSizeChange"
+            @current-change="handleCurrentChange" />
         </div>
       </div>
     </div>
@@ -136,7 +144,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  Search, Document, View, Download, More, Share
+  Search, Document, View, Download, More, Share, ArrowDown
 } from '@element-plus/icons-vue'
 import {
   getDocumentList, downloadDocument, formatFileSize, getFileIcon,
@@ -163,6 +171,7 @@ const categoryProps = {
 
 // 热门标签 - 从数据库加载
 const hotTags = ref([])
+const tagExpanded = ref(false)
 
 // 筛选条件
 const selectedCategory = ref(null)
@@ -171,6 +180,9 @@ const selectedFileTypes = ref([])
 const sortBy = ref('createTime')
 
 onMounted(() => {
+  if (route.query.keyword) {
+    keyword.value = route.query.keyword
+  }
   if (route.query.tag) {
     selectedTags.value = [route.query.tag]
   }
@@ -288,6 +300,10 @@ function getTagSize(count) {
   return 'small'
 }
 
+function toggleTagExpand() {
+  tagExpanded.value = !tagExpanded.value
+}
+
 function goToDetail(id) {
   router.push(`/doc/detail/${id}`)
 }
@@ -356,8 +372,23 @@ function handleShare(doc) {
   border-bottom: 1px solid #f0f0f0;
 }
 
+.filter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.filter-header .filter-title {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
 .category-tree {
-  max-height: 200px;
+  max-height: 400px;
   overflow-y: auto;
 }
 
@@ -365,6 +396,20 @@ function handleShare(doc) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  transition: max-height 0.3s ease;
+  max-height: 1000px;
+  /* 足够大的高度 */
+}
+
+.tag-cloud-collapsed {
+  max-height: 50px;
+  /* 大约3行的高度 */
+  overflow: hidden;
+}
+
+.rotate {
+  transform: rotate(180deg);
+  transition: transform 0.3s ease;
 }
 
 .hot-tag {

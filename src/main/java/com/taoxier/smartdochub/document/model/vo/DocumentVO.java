@@ -51,6 +51,15 @@ public class DocumentVO {
     @Schema(description = "总体重复率")
     private BigDecimal overallSimilarity;
 
+    @Schema(description = "文字重复率")
+    private BigDecimal textSimilarity;
+
+    @Schema(description = "表格重复率")
+    private BigDecimal tableSimilarity;
+
+    @Schema(description = "公式重复率")
+    private BigDecimal formulaSimilarity;
+
     @Schema(description = "AI生成概率")
     private BigDecimal aiProbability;
 
@@ -62,6 +71,12 @@ public class DocumentVO {
 
     @Schema(description = "是否公开")
     private Byte isPublic;
+
+    @Schema(description = "质量评分")
+    private BigDecimal qualityScore;
+
+    @Schema(description = "可读性评分")
+    private BigDecimal readabilityScore;
 
     @Schema(description = "浏览次数")
     private Integer viewCount;

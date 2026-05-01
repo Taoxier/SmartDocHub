@@ -135,29 +135,98 @@
           </el-list>
         </el-card>
       </div>
+
+      <div class="ai-analysis-section">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <span>AI 数据分析</span>
+              <el-tag type="success" size="small">自动更新</el-tag>
+            </div>
+          </template>
+
+          <div class="ai-summary" v-if="aiSummary">
+            <el-alert :title="aiSummary.summary || 'AI分析摘要加载中...'" type="info" :closable="false" show-icon />
+          </div>
+
+          <div class="charts-section">
+            <el-card shadow="hover" class="chart-card">
+              <template #header>
+                <span>文档增长趋势预测</span>
+              </template>
+              <div ref="trendChartRef" class="chart-container"></div>
+            </el-card>
+
+            <el-card shadow="hover" class="chart-card">
+              <template #header>
+                <span>AI率分布统计</span>
+              </template>
+              <div ref="aiRateChartRef" class="chart-container"></div>
+            </el-card>
+          </div>
+
+          <div class="ai-insights" v-if="aiSummary?.insights?.length">
+            <h4 class="insight-title">AI 数据洞察</h4>
+            <el-timeline>
+              <el-timeline-item v-for="(insight, idx) in aiSummary.insights" :key="idx"
+                :type="getInsightType(insight.level)" placement="top">
+                <el-card shadow="hover" class="insight-card">
+                  <div class="insight-header">
+                    <el-tag :type="getInsightType(insight.level)" size="small">{{ insight.category }}</el-tag>
+                    <span class="insight-time">{{ insight.time || '刚刚' }}</span>
+                  </div>
+                  <p class="insight-text">{{ insight.content }}</p>
+                </el-card>
+              </el-timeline-item>
+            </el-timeline>
+          </div>
+
+          <div class="anomaly-section" v-if="anomalies?.anomalies?.length">
+            <h4 class="insight-title">异常检测结果</h4>
+            <el-table :data="anomalies.anomalies" style="width: 100%" size="small">
+              <el-table-column prop="type" label="异常类型" width="120" />
+              <el-table-column prop="description" label="描述" />
+              <el-table-column prop="severity" label="严重程度" width="100">
+                <template #default="scope">
+                  <el-tag :type="getSeverityType(scope.row.severity)" size="small">
+                    {{ scope.row.severity }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="detectedAt" label="检测时间" width="180" />
+            </el-table>
+          </div>
+        </el-card>
+      </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import {
   Document, UserFilled, Upload, Download, View, DataAnalysis, User, TrendCharts
 } from '@element-plus/icons-vue'
-import { getAdminDocumentStats, getVisitStats, getTaskStats, getUploadTrend, getDocumentTypeRatio } from '@/api/admin'
+import { getAdminDocumentStats, getVisitStats, getTaskStats, getUploadTrend, getDocumentTypeRatio, getAiAnalysisSummary, getAiAnalysisTrend, getAiAnalysisAnomaly } from '@/api/admin'
 
 const router = useRouter()
 const uploadChartRef = ref()
 const typeChartRef = ref()
+const trendChartRef = ref()
+const aiRateChartRef = ref()
 
 const stats = ref({})
 const visitStats = ref({})
 const taskStats = ref({})
 const uploadTrend = ref([])
 const documentTypeRatio = ref([])
+const aiSummary = ref(null)
+const aiTrend = ref(null)
+const anomalies = ref(null)
+let refreshTimer = null
 
 function loadDocumentStats() {
   getAdminDocumentStats((data) => {
@@ -207,11 +276,121 @@ function loadData() {
   loadTaskStats()
   loadUploadTrend()
   loadDocumentTypeRatio()
+  loadAiAnalysisData()
   ElMessage.success('数据已刷新')
+}
+
+function loadAiAnalysisData() {
+  getAiAnalysisSummary((data) => {
+    aiSummary.value = data || null
+    nextTick(() => initAiRateChart())
+  }, () => {
+    aiSummary.value = null
+  })
+  getAiAnalysisTrend((data) => {
+    aiTrend.value = data || null
+    nextTick(() => initTrendChart())
+  }, () => {
+    aiTrend.value = null
+  })
+  getAiAnalysisAnomaly((data) => {
+    anomalies.value = data || null
+  }, () => {
+    anomalies.value = null
+  })
 }
 
 function goToTasks() {
   router.push('/admin/tasks')
+}
+
+function getInsightType(level) {
+  const map = { 'high': 'danger', 'medium': 'warning', 'low': 'success', 'info': 'info' }
+  return map[level] || 'info'
+}
+
+function getSeverityType(severity) {
+  const map = { '高': 'danger', '中': 'warning', '低': 'info', 'high': 'danger', 'medium': 'warning', 'low': 'info' }
+  return map[severity] || 'info'
+}
+
+function initTrendChart() {
+  if (!trendChartRef.value) return
+  const chart = echarts.init(trendChartRef.value)
+  const trendData = aiTrend.value || {}
+  const dates = trendData.dates || []
+  const actual = trendData.actual || []
+  const predicted = trendData.predicted || []
+
+  const option = {
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['实际', '预测'] },
+    xAxis: { type: 'category', data: dates },
+    yAxis: { type: 'value' },
+    series: [
+      {
+        name: '实际',
+        type: 'line',
+        data: actual,
+        smooth: true,
+        lineStyle: { color: '#409eff' },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(64, 158, 255, 0.3)' },
+            { offset: 1, color: 'rgba(64, 158, 255, 0.05)' }
+          ])
+        }
+      },
+      {
+        name: '预测',
+        type: 'line',
+        data: predicted,
+        smooth: true,
+        lineStyle: { color: '#fa8c16', type: 'dashed' },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(250, 140, 22, 0.3)' },
+            { offset: 1, color: 'rgba(250, 140, 22, 0.05)' }
+          ])
+        }
+      }
+    ]
+  }
+  chart.setOption(option)
+  window.addEventListener('resize', () => chart.resize())
+}
+
+function initAiRateChart() {
+  if (!aiRateChartRef.value) return
+  const chart = echarts.init(aiRateChartRef.value)
+  const rateData = aiSummary.value?.aiRateDistribution || [
+    { range: '0-20%', count: 0 },
+    { range: '20-40%', count: 0 },
+    { range: '40-60%', count: 0 },
+    { range: '60-80%', count: 0 },
+    { range: '80-100%', count: 0 }
+  ]
+
+  const option = {
+    tooltip: { trigger: 'axis' },
+    xAxis: {
+      type: 'category',
+      data: rateData.map(d => d.range)
+    },
+    yAxis: { type: 'value' },
+    series: [{
+      type: 'bar',
+      data: rateData.map(d => d.count),
+      itemStyle: {
+        color: (params) => {
+          const colors = ['#67c23a', '#95d475', '#e6a23c', '#f56c6c', '#c45656']
+          return colors[params.dataIndex] || '#409eff'
+        }
+      }
+    }]
+  }
+  chart.setOption(option)
+  window.addEventListener('resize', () => chart.resize())
 }
 
 function initUploadChart() {
@@ -290,12 +469,27 @@ function initTypeChart() {
 
 onMounted(() => {
   loadData()
+  refreshTimer = setInterval(() => {
+    loadAiAnalysisData()
+  }, 5 * 60 * 1000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
 })
 </script>
 
 <style scoped>
 .dashboard {
-  padding: 20px;
+  padding: 10px;
+}
+
+.el-card {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  margin-bottom: 10px;
 }
 
 .card-header {
@@ -368,5 +562,47 @@ onMounted(() => {
 .todo-text {
   font-size: 14px;
   color: #303133;
+}
+
+.ai-analysis-section {
+  margin-top: 20px;
+}
+
+.ai-summary {
+  margin-bottom: 16px;
+}
+
+.insight-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin: 16px 0 12px;
+}
+
+.insight-card {
+  margin-bottom: 0;
+}
+
+.insight-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.insight-time {
+  font-size: 12px;
+  color: #909399;
+}
+
+.insight-text {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.anomaly-section {
+  margin-top: 20px;
 }
 </style>

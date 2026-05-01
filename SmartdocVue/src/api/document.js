@@ -1,4 +1,4 @@
-import { get, post, put, del, accessHeader } from '@/net'
+import { get, post, put, del, accessHeader, getUserInfo } from '@/net'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
@@ -56,8 +56,8 @@ export function deleteDocument(id, success, failure) {
     del(`/api/document/${id}`, success, failure)
 }
 
-export function rateDocument(id, ratingValue, success, failure) {
-    post(`/api/document/rate/${id}?ratingValue=${ratingValue}`, {}, success, failure)
+export function rateDocument(id, qualityRating, readabilityRating, success, failure) {
+    post(`/api/document/rate/${id}?qualityRating=${qualityRating}&readabilityRating=${readabilityRating}`, {}, success, failure)
 }
 
 export function uploadDocument(file, onProgress, success, failure) {
@@ -81,11 +81,12 @@ export function uploadDocument(file, onProgress, success, failure) {
         if (data.code === '00000') {
             success(data.data)
         } else {
-            failure(data.msg || data.message, data.code)
+            failure(data.msg || data.message || '上传失败', data.code)
         }
     }).catch(err => {
         console.error(err)
-        ElMessage.error('上传失败，请重试')
+        const errorMsg = err.response?.data?.msg || err.response?.data?.message || '上传失败，请重试'
+        failure(errorMsg, err.response?.status)
     })
 }
 
@@ -318,4 +319,97 @@ export function getRecommendedDocuments(userId, limit, offset = 0, refresh = fal
 // 根据文档ID列表获取文档详情
 export function getDocumentsByIds(documentIds, success, failure) {
     post('/api/recommend/documents', documentIds, success, failure)
+}
+
+// 获取AI分析结果
+export function getAiAnalysisResult(documentId, success, failure) {
+    get(`/api/document/ai-rate/${documentId}`, success, failure)
+}
+
+// ========== 评论相关 ==========
+
+export function getComments(docId, success, failure) {
+    get(`/api/comment/document/${docId}`, success, failure)
+}
+
+export function addComment(comment, success, failure) {
+    post('/api/comment', comment, success, failure)
+}
+
+export function getCommentAuditResult(commentId, success, failure) {
+    get(`/api/comment/audit/result/${commentId}`, success, failure)
+}
+
+// ========== 文档审核相关 ==========
+
+export function getDocumentAuditStatus(docId, success, failure) {
+    get(`/api/document/audit/status/${docId}`, success, failure)
+}
+
+export function submitDocumentAudit(documentId, auditType, success, failure) {
+    post(`/api/document/audit/content?documentId=${documentId}&auditType=${auditType}`, {}, success, failure)
+}
+
+// ========== 翻译相关 ==========
+
+export function submitTranslationTask(documentId, userId, sourceLanguage, targetLanguage, success, failure) {
+    post(`/api/document/translate?documentId=${documentId}&userId=${userId}&sourceLanguage=${sourceLanguage}&targetLanguage=${targetLanguage}`, {}, success, failure)
+}
+
+export function getTranslationTaskStatus(taskId, success, failure) {
+    get(`/api/document/task/${taskId}`, success, failure)
+}
+
+// ========== 格式转换相关 ==========
+
+export function submitConversionTask(documentId, userId, sourceFormat, targetFormat, success, failure) {
+    post(`/api/document/convert?documentId=${documentId}&userId=${userId}&sourceFormat=${sourceFormat}&targetFormat=${targetFormat}`, {}, success, failure)
+}
+
+export function getConversionTaskStatus(taskId, success, failure) {
+    get(`/api/document/task/convert/${taskId}`, success, failure)
+}
+
+// ========== 文档分块相关 ==========
+
+export function getDocumentChunks(docId, success, failure) {
+    get(`/api/document/chunks/${docId}`, success, failure)
+}
+
+// ========== 版本差异对比相关 ==========
+
+export function getVersionDiff(documentId, version1, version2, success, failure) {
+    get(`/api/document/version/diff?documentId=${documentId}&version1=${version1}&version2=${version2}`, success, failure)
+}
+
+export function rollbackVersion(documentId, versionNumber, success, failure) {
+    const userInfo = getUserInfo()
+    if (!userInfo || !userInfo.userId) {
+        ElMessage.error('用户未登录')
+        failure('用户未登录')
+        return
+    }
+    const headers = {
+        ...accessHeader(),
+        'X-User-Id': userInfo.userId
+    }
+    axios.post(`/api/document/version/rollback?documentId=${documentId}&versionNumber=${versionNumber}`, {}, {
+        headers: headers
+    }).then(({ data }) => {
+        if (data.code === '00000') {
+            success(data.data)
+        } else {
+            failure(data.msg || data.message)
+        }
+    }).catch(err => {
+        console.error(err)
+        ElMessage.error('回滚失败')
+        failure('回滚失败')
+    })
+}
+
+// ========== 相似文档相关 ==========
+
+export function getSimilarDocuments(docId, threshold = 0, limit = 10, success, failure) {
+    get(`/api/document/similar/${docId}?threshold=${threshold}&limit=${limit}`, success, failure)
 }

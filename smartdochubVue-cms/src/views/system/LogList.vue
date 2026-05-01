@@ -6,20 +6,10 @@
           <span>日志管理</span>
         </div>
       </template>
-      
+
       <el-form :inline="true" :model="searchForm" class="search-form">
-        <el-form-item label="操作人">
-          <el-input v-model="searchForm.username" placeholder="请输入操作人" style="width: 150px"></el-input>
-        </el-form-item>
-        <el-form-item label="操作类型">
-          <el-select v-model="searchForm.operationType" placeholder="请选择操作类型" style="width: 150px">
-            <el-option label="全部" value=""></el-option>
-            <el-option label="登录" value="LOGIN"></el-option>
-            <el-option label="上传" value="UPLOAD"></el-option>
-            <el-option label="下载" value="DOWNLOAD"></el-option>
-            <el-option label="删除" value="DELETE"></el-option>
-            <el-option label="审核" value="AUDIT"></el-option>
-          </el-select>
+        <el-form-item label="关键字">
+          <el-input v-model="searchForm.keywords" placeholder="日志内容/路径/操作人" style="width: 200px" clearable></el-input>
         </el-form-item>
         <el-form-item label="操作时间">
           <el-date-picker
@@ -28,7 +18,8 @@
             range-separator="至"
             start-placeholder="开始日期"
             end-placeholder="结束日期"
-            style="width: 200px"
+            value-format="YYYY-MM-DD"
+            style="width: 240px"
           ></el-date-picker>
         </el-form-item>
         <el-form-item>
@@ -36,28 +27,31 @@
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
-      
-      <el-table :data="logs" style="width: 100%" border>
+
+      <el-table :data="logs" style="width: 100%" border v-loading="loading">
         <el-table-column prop="id" label="日志ID" width="80"></el-table-column>
-        <el-table-column prop="username" label="操作人" width="120"></el-table-column>
-        <el-table-column prop="operationType" label="操作类型" width="100">
+        <el-table-column prop="operator" label="操作人" width="120"></el-table-column>
+        <el-table-column prop="module" label="日志模块" width="120">
           <template #default="scope">
-            <el-tag>{{ scope.row.operationType }}</el-tag>
+            <el-tag size="small">{{ getModuleText(scope.row.module) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="operationContent" label="操作内容" min-width="300"></el-table-column>
-        <el-table-column prop="ipAddress" label="IP地址" width="150"></el-table-column>
-        <el-table-column prop="createTime" label="操作时间" width="180"></el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column prop="content" label="日志内容" min-width="250" show-overflow-tooltip></el-table-column>
+        <el-table-column prop="requestUri" label="请求路径" width="180" show-overflow-tooltip></el-table-column>
+        <el-table-column prop="ip" label="IP地址" width="140"></el-table-column>
+        <el-table-column prop="region" label="地区" width="100"></el-table-column>
+        <el-table-column prop="executionTime" label="耗时(ms)" width="90"></el-table-column>
+        <el-table-column prop="createTime" label="操作时间" width="170"></el-table-column>
+        <el-table-column label="操作" width="80" fixed="right">
           <template #default="scope">
-            <el-button size="small" @click="viewDetails(scope.row.id)">详情</el-button>
+            <el-button size="small" @click="viewDetails(scope.row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
-      
+
       <div class="pagination-container">
         <el-pagination
-          v-model:current-page="pagination.currentPage"
+          v-model:current-page="pagination.pageNum"
           v-model:page-size="pagination.pageSize"
           :page-sizes="[10, 20, 50, 100]"
           layout="total, sizes, prev, pager, next, jumper"
@@ -67,87 +61,109 @@
         ></el-pagination>
       </div>
     </el-card>
+
+    <el-dialog v-model="showDetailDialog" title="日志详情" width="650px">
+      <el-descriptions :column="2" border v-if="currentLog">
+        <el-descriptions-item label="日志ID" :span="2">{{ currentLog.id }}</el-descriptions-item>
+        <el-descriptions-item label="操作人">{{ currentLog.operator }}</el-descriptions-item>
+        <el-descriptions-item label="日志模块">{{ getModuleText(currentLog.module) }}</el-descriptions-item>
+        <el-descriptions-item label="日志内容" :span="2">{{ currentLog.content }}</el-descriptions-item>
+        <el-descriptions-item label="请求路径" :span="2">{{ currentLog.requestUri }}</el-descriptions-item>
+        <el-descriptions-item label="请求方法" :span="2">{{ currentLog.method }}</el-descriptions-item>
+        <el-descriptions-item label="IP地址">{{ currentLog.ip }}</el-descriptions-item>
+        <el-descriptions-item label="地区">{{ currentLog.region }}</el-descriptions-item>
+        <el-descriptions-item label="浏览器">{{ currentLog.browser }}</el-descriptions-item>
+        <el-descriptions-item label="终端系统">{{ currentLog.os }}</el-descriptions-item>
+        <el-descriptions-item label="执行时间">{{ currentLog.executionTime }} ms</el-descriptions-item>
+        <el-descriptions-item label="操作时间">{{ currentLog.createTime }}</el-descriptions-item>
+      </el-descriptions>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, reactive, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { getLogPage } from '@/api/admin'
 
-// 搜索表单
+const loading = ref(false)
+const logs = ref([])
+const showDetailDialog = ref(false)
+const currentLog = ref(null)
+
 const searchForm = reactive({
-  username: '',
-  operationType: '',
+  keywords: '',
   dateRange: []
 })
 
-// 分页信息
 const pagination = reactive({
-  currentPage: 1,
+  pageNum: 1,
   pageSize: 10,
   total: 0
 })
 
-// 日志列表
-const logs = ref([
-  {
-    id: 1,
-    username: 'admin',
-    operationType: 'LOGIN',
-    operationContent: '用户登录',
-    ipAddress: '192.168.1.100',
-    createTime: '2026-04-08 10:00:00'
-  },
-  {
-    id: 2,
-    username: 'user1',
-    operationType: 'UPLOAD',
-    operationContent: '上传文档：毕设题目详解',
-    ipAddress: '192.168.1.101',
-    createTime: '2026-04-08 10:30:00'
-  },
-  {
-    id: 3,
-    username: 'admin',
-    operationType: 'AUDIT',
-    operationContent: '审核文档：毕设题目详解，状态：通过',
-    ipAddress: '192.168.1.100',
-    createTime: '2026-04-08 11:00:00'
+const MODULE_MAP = {
+  LOGIN: '登录', USER: '用户', ROLE: '角色', MENU: '菜单',
+  DOCUMENT: '文档', COMMENT: '评论', CATEGORY: '分类', TAG: '标签',
+  TASK: '任务', SETTING: '配置', LOG: '日志', DASHBOARD: '仪表盘'
+}
+
+function getModuleText(module) {
+  if (!module) return '-'
+  return MODULE_MAP[module] || module
+}
+
+function loadLogs() {
+  loading.value = true
+  const params = {
+    pageNum: pagination.pageNum,
+    pageSize: pagination.pageSize,
+    keywords: searchForm.keywords
   }
-])
+  if (searchForm.dateRange && searchForm.dateRange.length === 2) {
+    params.createTime = [searchForm.dateRange[0], searchForm.dateRange[1]]
+  }
+  getLogPage(params, (data) => {
+    logs.value = data.records || data.list || []
+    pagination.total = data.total || 0
+    loading.value = false
+  }, (msg) => {
+    ElMessage.error(msg || '加载日志列表失败')
+    loading.value = false
+  })
+}
 
-// 搜索
 function search() {
-  console.log('搜索条件:', searchForm)
-  // 这里可以添加搜索API调用
+  pagination.pageNum = 1
+  loadLogs()
 }
 
-// 重置
 function reset() {
-  searchForm.username = ''
-  searchForm.operationType = ''
+  searchForm.keywords = ''
   searchForm.dateRange = []
+  pagination.pageNum = 1
+  loadLogs()
 }
 
-// 查看详情
-function viewDetails(id) {
-  console.log('查看日志详情:', id)
-  // 这里可以添加查看日志详情的逻辑
-  ElMessage.info('查看详情功能正在开发中')
+function viewDetails(row) {
+  currentLog.value = row
+  showDetailDialog.value = true
 }
 
-// 分页处理
 function handleSizeChange(size) {
   pagination.pageSize = size
-  console.log('每页条数:', size)
-  // 这里可以添加分页API调用
+  pagination.pageNum = 1
+  loadLogs()
 }
 
 function handleCurrentChange(current) {
-  pagination.currentPage = current
-  console.log('当前页码:', current)
-  // 这里可以添加分页API调用
+  pagination.pageNum = current
+  loadLogs()
 }
+
+onMounted(() => {
+  loadLogs()
+})
 </script>
 
 <style scoped>

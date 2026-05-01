@@ -679,4 +679,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return userConverter.toOptions(list);
     }
 
+    @Override
+    public Map<Long, String> getUserNameMap(Set<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<User> users = this.list(new LambdaQueryWrapper<User>()
+                .in(User::getId, userIds)
+        );
+        return users.stream()
+                .collect(Collectors.toMap(User::getId, user -> user.getNickname() != null ? user.getNickname() : user.getUsername()));
+    }
+
 }
